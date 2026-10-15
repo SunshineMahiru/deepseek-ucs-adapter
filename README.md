@@ -47,7 +47,7 @@ pip install ucs-parser
 ```bash
 # 1. Export conversations.json from the DeepSeek web app (see "Getting your data")
 # 2. Convert to ChatGPT mapping format (positional args: input output)
-python sunshinemahiru_deepseek_to_ucs.py \
+python deepseek_to_ucs.py \
   /path/to/conversations.json \
   /path/to/conversations_chatgpt.json
 
@@ -77,7 +77,7 @@ DeepSeek web app → **Settings** → **Data management** → **Export all conve
 ```
 DeepSeek conversations.json
         ↓
-[sunshinemahiru_deepseek_to_ucs.py]   # fragments[] → content.parts[]
+[deepseek_to_ucs.py]   # fragments[] → content.parts[]
         ↓
 ChatGPT mapping format
         ↓
@@ -94,7 +94,7 @@ Agent adaptation
 
 ```
 .
-├── sunshinemahiru_deepseek_to_ucs.py   # core converter (stdlib only)
+├── deepseek_to_ucs.py   # core converter (stdlib only)
 ├── 风格卡片.md                          # hand-crafted interaction style card
 ├── injection_snippets.md               # 3 Agent injection templates
 ├── 调研与方案设计.md                     # research report + design
@@ -104,6 +104,8 @@ Agent adaptation
 ├── research_fix_analysis.py            # repair-behaviour research script
 ├── README.md                           # this file (English)
 ├── README.zh-CN.md                     # Chinese version
+├── .gitattributes                      # line-ending normalization
+├── .gitignore                          # exclude private data & caches
 └── LICENSE
 ```
 

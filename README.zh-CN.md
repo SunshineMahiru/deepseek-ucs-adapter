@@ -47,7 +47,7 @@ pip install ucs-parser
 ```bash
 # 1. 从 DeepSeek 网页版导出 conversations.json（见下方「数据获取」）
 # 2. 转换为 ChatGPT mapping 格式（位置参数：输入 输出）
-python sunshinemahiru_deepseek_to_ucs.py \
+python deepseek_to_ucs.py \
   /path/to/conversations.json \
   /path/to/conversations_chatgpt.json
 
@@ -77,7 +77,7 @@ DeepSeek 网页版 → **系统设置** → **数据管理** → **导出所有�
 ```
 DeepSeek conversations.json
         ↓
-[sunshinemahiru_deepseek_to_ucs.py]   # fragments[] → content.parts[]
+[deepseek_to_ucs.py]   # fragments[] → content.parts[]
         ↓
 ChatGPT mapping format
         ↓
@@ -94,7 +94,7 @@ Agent 适配
 
 ```
 .
-├── sunshinemahiru_deepseek_to_ucs.py   # 核心转换脚本（仅标准库）
+├── deepseek_to_ucs.py   # 核心转换脚本（仅标准库）
 ├── 风格卡片.md                          # 手工交互模式卡片
 ├── injection_snippets.md               # 3 种 Agent 注入模板
 ├── 调研与方案设计.md                     # 调研报告 + 方案设计
@@ -104,6 +104,8 @@ Agent 适配
 ├── research_fix_analysis.py            # 中文修复行为调研脚本
 ├── README.md                           # 英文版
 ├── README.zh-CN.md                     # 本文档（中文版）
+├── .gitattributes                      # 换行符规范化
+├── .gitignore                          # 排除隐私数据与缓存
 └── LICENSE
 ```
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-sunshinemahiru_deepseek_to_ucs.py
+deepseek_to_ucs.py
 =================================
 
 Convert DeepSeek web-export conversations.json into ChatGPT mapping format
@@ -40,10 +40,10 @@ DeepSeek 导出虽然也是 mapping 树结构，但消息内容存放在 message
 依赖 / Dependencies: 仅标准库（json / uuid / datetime / sys / argparse / hashlib / re）。
 
 用法 / Usage:
-    python sunshinemahiru_deepseek_to_ucs.py <input.json> <output.json>
-    python sunshinemahiru_deepseek_to_ucs.py in.json out.json --verbose
-    python sunshinemahiru_deepseek_to_ucs.py in.json out.json --limit 10 --dry-run
-    python sunshinemahiru_deepseek_to_ucs.py in.json out.json --lang en
+    python deepseek_to_ucs.py <input.json> <output.json>
+    python deepseek_to_ucs.py in.json out.json --verbose
+    python deepseek_to_ucs.py in.json out.json --limit 10 --dry-run
+    python deepseek_to_ucs.py in.json out.json --lang en
 """
 
 from __future__ import annotations
@@ -116,7 +116,7 @@ MSG: dict[str, dict[str, str]] = {
     "stats_warnings": {"zh": "警告/跳过记录", "en": "Warnings/skips"},
 
     # 日志 / 输出
-    "log_header": {"zh": "sunshinemahiru_deepseek_to_ucs 转换日志", "en": "sunshinemahiru_deepseek_to_ucs conversion log"},
+    "log_header": {"zh": "deepseek_to_ucs 转换日志", "en": "deepseek_to_ucs conversion log"},
     "log_input": {"zh": "输入: {path}", "en": "Input: {path}"},
     "log_output": {"zh": "输出: {path}", "en": "Output: {path}"},
     "log_warn_count": {"zh": "警告/跳过 {n} 条", "en": "Warnings/skips: {n}"},
@@ -409,7 +409,7 @@ def main(argv: Optional[list[str]] = None) -> int:
     set_lang(_preparse_lang(raw_argv))
 
     ap = argparse.ArgumentParser(
-        prog="sunshinemahiru_deepseek_to_ucs",
+        prog="deepseek_to_ucs",
         description=t("prog_desc"),
     )
     ap.add_argument("input", help=t("arg_input"))
