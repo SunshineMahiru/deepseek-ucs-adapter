@@ -4,24 +4,28 @@
 sunshinemahiru_deepseek_to_ucs.py
 =================================
 
-将 DeepSeek 网页版导出的 conversations.json 转换为 ucs-parser 可解析的
-ChatGPT mapping 格式。
+Convert DeepSeek web-export conversations.json into ChatGPT mapping format
+that ucs-parser can parse. UI text is bilingual (Chinese / English), switchable
+via `--lang zh|en`.
 
-背景
+将 DeepSeek 网页版导出的 conversations.json 转换为 ucs-parser 可解析的
+ChatGPT mapping 格式。界面文案支持中英双语，用 `--lang zh|en` 切换。
+
+背景 / Background
 ----
 ucs-parser（v0.1.0）在 `_extract_messages` 中只读取三个字段：
     message.author.role、message.content.parts[]、message.create_time
 DeepSeek 导出虽然也是 mapping 树结构，但消息内容存放在 message.fragments[]
 中，导致 ucs-parser 提取不到任何信号，Fidelity 分数极低。
 
-本脚本完成：
+本脚本完成 / What it does:
     1. fragments[] -> author.role + content.parts[]
     2. 短节点 ID -> 确定性 UUID v4（幂等，重复运行输出完全一致）
     3. 推断 current_node（最后一个叶子节点）
     4. ISO 8601 时间戳 -> Unix 浮点数
     5. 补充 ChatGPT 所需空字段
 
-关键设计说明（务必阅读）：
+关键设计说明（务必阅读）/ Design notes:
 - root 节点（message == null）**保留**。ucs-parser 的 `_extract_messages`
   有 `if not msg: continue` 保护，不会崩溃；保留它符合 ChatGPT 导出格式。
 - 一条消息的 fragments 为空 / 全是无文本工具片段时，该节点会被**跳过**，
@@ -33,12 +37,13 @@ DeepSeek 导出虽然也是 mapping 树结构，但消息内容存放在 message
   其余工具类(TOOL_*/SEARCH)->丢弃（它们无文本，且 SEARCH.results 是
   Python repr 字符串）。
 
-依赖：仅标准库（json / uuid / datetime / sys / argparse / hashlib / re）。
+依赖 / Dependencies: 仅标准库（json / uuid / datetime / sys / argparse / hashlib / re）。
 
-用法：
+用法 / Usage:
     python sunshinemahiru_deepseek_to_ucs.py <input.json> <output.json>
     python sunshinemahiru_deepseek_to_ucs.py in.json out.json --verbose
     python sunshinemahiru_deepseek_to_ucs.py in.json out.json --limit 10 --dry-run
+    python sunshinemahiru_deepseek_to_ucs.py in.json out.json --lang en
 """
 
 from __future__ import annotations
@@ -53,16 +58,93 @@ from typing import Any, Callable, Optional
 
 
 # ---------------------------------------------------------------------------
+# i18n：界面文案（中英双语）
+# ---------------------------------------------------------------------------
+
+_LANG: str = "zh"
+
+MSG: dict[str, dict[str, str]] = {
+    # argparse 帮助文案
+    "prog_desc": {
+        "zh": "DeepSeek conversations.json -> ChatGPT/ucs-parser mapping 转换器",
+        "en": "Convert DeepSeek conversations.json into ChatGPT/ucs-parser mapping",
+    },
+    "arg_input": {"zh": "DeepSeek 导出的 conversations.json 路径", "en": "Path to the DeepSeek conversations.json export"},
+    "arg_output": {"zh": "输出的 ChatGPT 格式 JSON 路径", "en": "Output path for the ChatGPT-format JSON"},
+    "arg_verbose": {"zh": "打印每个会话的转换统计", "en": "Print per-conversation statistics"},
+    "arg_dry_run": {"zh": "只解析和统计，不写文件", "en": "Parse and report only, without writing files"},
+    "arg_limit": {"zh": "只转换前 N 个会话（用于快速测试）", "en": "Convert only the first N conversations (for quick testing)"},
+    "arg_merge_think": {
+        "zh": "保留 THINK 推理片段并加 [REASONING] 前缀（默认开启）；--no-merge-think 丢弃",
+        "en": "Keep THINK reasoning fragments with a [REASONING] prefix (default on); --no-merge-think drops them",
+    },
+    "arg_lang": {"zh": "界面语言（zh=中文，en=English）", "en": "UI language (zh=Chinese, en=English)"},
+
+    # 警告（fragment / 会话）
+    "warn_frag_not_dict": {"zh": "fragment 不是 dict，跳过", "en": "fragment is not a dict, skipped"},
+    "warn_frag_no_type": {"zh": "fragment 缺少 type，跳过", "en": "fragment missing type, skipped"},
+    "warn_req_no_content": {"zh": "REQUEST fragment 缺少 content，跳过", "en": "REQUEST fragment missing content, skipped"},
+    "warn_resp_no_content": {"zh": "RESPONSE fragment 缺少 content，跳过", "en": "RESPONSE fragment missing content, skipped"},
+    "warn_think_no_content": {"zh": "THINK fragment 缺少 content，跳过", "en": "THINK fragment missing content, skipped"},
+    "warn_conv_no_mapping": {"zh": "会话 '{title}' (id={id}) 缺少 mapping，跳过", "en": "conversation '{title}' (id={id}) missing mapping, skipped"},
+    "warn_conv_no_root": {"zh": "会话 '{title}' (id={id}) 无 root 节点，跳过", "en": "conversation '{title}' (id={id}) has no root node, skipped"},
+    "warn_conv_not_dict": {"zh": "第 {i} 个会话不是 dict，跳过", "en": "conversation #{i} is not a dict, skipped"},
+
+    # 错误
+    "err_read_input": {"zh": "错误：无法读取输入文件：{e}", "en": "Error: cannot read input file: {e}"},
+    "warn_top_not_array": {"zh": "警告：输入顶层不是数组（{t}），已包装为单元素数组", "en": "Warning: top-level input is not an array ({t}), wrapped as a single-element array"},
+
+    # 进度 / verbose
+    "verbose_conv": {"zh": "[{i}/{total}] '{title}' -> {n} 节点", "en": "[{i}/{total}] '{title}' -> {n} nodes"},
+    "progress": {"zh": "已处理 {i}/{total} 个会话", "en": "Processed {i}/{total} conversations"},
+
+    # 统计
+    "stats_title": {"zh": "转换统计", "en": "Conversion statistics"},
+    "stats_total": {"zh": "总会话数", "en": "Total conversations"},
+    "stats_success": {"zh": "成功转换会话数", "en": "Successfully converted"},
+    "stats_skipped_conv": {"zh": "跳过的会话数", "en": "Skipped conversations"},
+    "stats_msg_nodes": {"zh": "总消息节点数(不含root)", "en": "Message nodes (excl. root)"},
+    "stats_skipped_nodes": {"zh": "跳过的空节点数", "en": "Skipped empty nodes"},
+    "stats_skipped_frags": {"zh": "跳过的问题 fragment", "en": "Skipped malformed fragments"},
+    "stats_frag_title": {"zh": "fragment 类型计数", "en": "Fragment type counts"},
+    "stats_frag_request": {"zh": "REQUEST", "en": "REQUEST"},
+    "stats_frag_response": {"zh": "RESPONSE", "en": "RESPONSE"},
+    "stats_frag_think_kept": {"zh": "THINK(保留)", "en": "THINK (kept)"},
+    "stats_frag_think_dropped": {"zh": "THINK(丢弃)", "en": "THINK (dropped)"},
+    "stats_frag_file": {"zh": "FILE(文件名)", "en": "FILE (filenames)"},
+    "stats_frag_unknown": {"zh": "unknown/工具类", "en": "unknown/tool"},
+    "stats_warnings": {"zh": "警告/跳过记录", "en": "Warnings/skips"},
+
+    # 日志 / 输出
+    "log_header": {"zh": "sunshinemahiru_deepseek_to_ucs 转换日志", "en": "sunshinemahiru_deepseek_to_ucs conversion log"},
+    "log_input": {"zh": "输入: {path}", "en": "Input: {path}"},
+    "log_output": {"zh": "输出: {path}", "en": "Output: {path}"},
+    "log_warn_count": {"zh": "警告/跳过 {n} 条", "en": "Warnings/skips: {n}"},
+    "log_written": {"zh": "日志已写入: {path}", "en": "Log written to: {path}"},
+    "dryrun_no_log": {"zh": "[dry-run] 跳过 {n} 条，未写日志", "en": "[dry-run] {n} item(s) skipped, no log written"},
+    "dryrun_no_output": {"zh": "[dry-run] 未写入输出文件", "en": "[dry-run] output file not written"},
+    "output_written": {"zh": "输出已写入: {path}", "en": "Output written to: {path}"},
+}
+
+
+def set_lang(lang: str) -> None:
+    """设置界面语言：'zh' 或 'en'。"""
+    global _LANG
+    _LANG = lang if lang in ("zh", "en") else "zh"
+
+
+def t(key: str, **kwargs: Any) -> str:
+    """返回当前语言下的消息文案，并应用格式化参数。"""
+    fmt = MSG.get(key, {}).get(_LANG, key)
+    return fmt.format(**kwargs) if kwargs else fmt
+
+
+# ---------------------------------------------------------------------------
 # 工具函数
 # ---------------------------------------------------------------------------
 
 def deterministic_uuid4(seed: str) -> str:
-    """
-    由 seed 生成确定性的 UUID v4 字符串（幂等）。
-
-    用 sha256(seed) 取前 16 字节，再按 RFC 4122 置 version=4、variant 位。
-    这样得到的是「版本号为 4」的合法 UUID，同时重复运行结果完全一致。
-    """
+    """由 seed 生成确定性的 UUID v4 字符串（幂等）。"""
     digest = hashlib.sha256(seed.encode("utf-8")).digest()[:16]
     b = bytearray(digest)
     b[6] = (b[6] & 0x0F) | 0x40   # version 4
@@ -71,13 +153,7 @@ def deterministic_uuid4(seed: str) -> str:
 
 
 def to_unix(iso: Any) -> float:
-    """
-    把 ISO 8601 字符串转成 Unix 浮点时间戳（秒 + 微秒）。
-    解析失败时返回 0.0（回退值）。
-
-    注意：0.0 作为消息级 create_time 会让 ucs-parser 推断出 1970-01 的
-    temporal 起点；但本数据时间戳全部合法，实际不会触发。
-    """
+    """把 ISO 8601 字符串转成 Unix 浮点时间戳，解析失败返回 0.0。"""
     if not iso:
         return 0.0
     try:
@@ -97,20 +173,20 @@ def extract_parts(
     for frag in fragments:
         if not isinstance(frag, dict):
             stats["skipped_fragments"] += 1
-            warn("fragment 不是 dict，跳过")
+            warn(t("warn_frag_not_dict"))
             continue
 
         ftype = str(frag.get("type") or "").upper()
         if not ftype:
             stats["skipped_fragments"] += 1
-            warn("fragment 缺少 type，跳过")
+            warn(t("warn_frag_no_type"))
             continue
 
         if ftype == "REQUEST":
             content = frag.get("content")
             if content is None:
                 stats["skipped_fragments"] += 1
-                warn("REQUEST fragment 缺少 content，跳过")
+                warn(t("warn_req_no_content"))
                 continue
             stats["frag_REQUEST"] += 1
             text = str(content).strip()
@@ -121,7 +197,7 @@ def extract_parts(
             content = frag.get("content")
             if content is None:
                 stats["skipped_fragments"] += 1
-                warn("RESPONSE fragment 缺少 content，跳过")
+                warn(t("warn_resp_no_content"))
                 continue
             stats["frag_RESPONSE"] += 1
             text = str(content).strip()
@@ -135,7 +211,7 @@ def extract_parts(
                 continue
             if content is None:
                 stats["skipped_fragments"] += 1
-                warn("THINK fragment 缺少 content，跳过")
+                warn(t("warn_think_no_content"))
                 continue
             stats["frag_THINK"] += 1
             text = str(content).strip()
@@ -194,7 +270,7 @@ def convert_conversation(
     title = conv.get("title")
     raw = conv.get("mapping")
     if not isinstance(raw, dict) or not raw:
-        warn(f"会话 '{title}' (id={conv_id}) 缺少 mapping，跳过")
+        warn(t("warn_conv_no_mapping", title=title, id=conv_id))
         stats["skipped_conversations"] += 1
         return None
 
@@ -204,7 +280,7 @@ def convert_conversation(
     if not root_ids:
         root_ids = [nid for nid in raw if nid == "root"]
     if not root_ids:
-        warn(f"会话 '{title}' (id={conv_id}) 无 root 节点，跳过")
+        warn(t("warn_conv_no_root", title=title, id=conv_id))
         stats["skipped_conversations"] += 1
         return None
     root_id = root_ids[0]
@@ -318,33 +394,50 @@ def convert_conversation(
 # 主流程
 # ---------------------------------------------------------------------------
 
+def _preparse_lang(argv: list[str]) -> str:
+    """在 argparse 之前手动提取 --lang，以便帮助文案也能本地化。"""
+    for i, a in enumerate(argv):
+        if a == "--lang" and i + 1 < len(argv):
+            return argv[i + 1]
+        if a.startswith("--lang="):
+            return a.split("=", 1)[1]
+    return "zh"
+
+
 def main(argv: Optional[list[str]] = None) -> int:
+    raw_argv = sys.argv[1:] if argv is None else list(argv)
+    set_lang(_preparse_lang(raw_argv))
+
     ap = argparse.ArgumentParser(
         prog="sunshinemahiru_deepseek_to_ucs",
-        description="DeepSeek conversations.json -> ChatGPT/ucs-parser mapping 转换器",
+        description=t("prog_desc"),
     )
-    ap.add_argument("input", help="DeepSeek 导出的 conversations.json 路径")
-    ap.add_argument("output", help="输出的 ChatGPT 格式 JSON 路径")
-    ap.add_argument("--verbose", action="store_true", help="打印每个会话的转换统计")
-    ap.add_argument("--dry-run", action="store_true", help="只解析和统计，不写文件")
-    ap.add_argument("--limit", type=int, default=None, help="只转换前 N 个会话（用于快速测试）")
+    ap.add_argument("input", help=t("arg_input"))
+    ap.add_argument("output", help=t("arg_output"))
+    ap.add_argument("--verbose", action="store_true", help=t("arg_verbose"))
+    ap.add_argument("--dry-run", action="store_true", help=t("arg_dry_run"))
+    ap.add_argument("--limit", type=int, default=None, help=t("arg_limit"))
     ap.add_argument(
         "--merge-think", action=argparse.BooleanOptionalAction, default=True,
-        help="保留 THINK 推理片段并加 [REASONING] 前缀（默认开启）；--no-merge-think 丢弃",
+        help=t("arg_merge_think"),
     )
-    args = ap.parse_args(argv)
+    ap.add_argument("--lang", choices=["zh", "en"], default="zh", help=t("arg_lang"))
+    args = ap.parse_args(raw_argv)
+
+    # 以 argparse 解析结果为准
+    set_lang(args.lang)
 
     # 读取输入
     try:
         with open(args.input, encoding="utf-8") as f:
             data = json.load(f)
     except (OSError, json.JSONDecodeError) as e:
-        print(f"错误：无法读取输入文件：{e}", file=sys.stderr)
+        print(t("err_read_input", e=e), file=sys.stderr)
         return 2
 
     # 顶层必须是数组；否则尝试包装
     if not isinstance(data, list):
-        print(f"警告：输入顶层不是数组（{type(data).__name__}），已包装为单元素数组", file=sys.stderr)
+        print(t("warn_top_not_array", t=type(data).__name__), file=sys.stderr)
         data = [data]
 
     if args.limit is not None:
@@ -372,7 +465,7 @@ def main(argv: Optional[list[str]] = None) -> int:
     out: list[dict] = []
     for i, conv in enumerate(data, start=1):
         if not isinstance(conv, dict):
-            warn(f"第 {i} 个会话不是 dict，跳过")
+            warn(t("warn_conv_not_dict", i=i))
             stats["skipped_conversations"] += 1
             continue
 
@@ -381,57 +474,67 @@ def main(argv: Optional[list[str]] = None) -> int:
             out.append(result)
 
         if args.verbose:
-            print(f"[{i}/{total}] '{conv.get('title')}' -> "
-                  f"{len(result['mapping']) if result else 0} 节点")
+            print(t("verbose_conv", i=i, total=total, title=conv.get("title"),
+                    n=len(result["mapping"]) if result else 0))
 
         if total >= 50 and (i % 50 == 0 or i == total):
-            print(f"已处理 {i}/{total} 个会话")
+            print(t("progress", i=i, total=total))
 
     # ---- 输出统计 ----
     print("\n" + "=" * 60)
-    print("转换统计")
+    print(t("stats_title"))
     print("=" * 60)
-    print(f"  总会话数            : {total}")
-    print(f"  成功转换会话数      : {len(out)}")
-    print(f"  跳过的会话数        : {stats['skipped_conversations']}")
-    print(f"  总消息节点数(不含root): {stats['message_nodes']}")
-    print(f"  跳过的空节点数      : {stats['skipped_nodes']}")
-    print(f"  跳过的问题 fragment  : {stats['skipped_fragments']}")
-    print("  fragment 类型计数:")
-    print(f"    REQUEST          : {stats['frag_REQUEST']}")
-    print(f"    RESPONSE         : {stats['frag_RESPONSE']}")
-    print(f"    THINK(保留)      : {stats['frag_THINK']}")
-    print(f"    THINK(丢弃)      : {stats['frag_THINK_dropped']}")
-    print(f"    FILE(文件名)     : {stats['frag_FILE']}")
-    print(f"    unknown/工具类    : {stats['frag_unknown']}")
-    print(f"  警告/跳过记录       : {len(warnings)} 条")
+    rows = [
+        (t("stats_total"), str(total)),
+        (t("stats_success"), str(len(out))),
+        (t("stats_skipped_conv"), str(stats["skipped_conversations"])),
+        (t("stats_msg_nodes"), str(stats["message_nodes"])),
+        (t("stats_skipped_nodes"), str(stats["skipped_nodes"])),
+        (t("stats_skipped_frags"), str(stats["skipped_fragments"])),
+    ]
+    width = max(len(label) for label, _ in rows) + 2
+    for label, value in rows:
+        print(f"  {label:<{width}}: {value}")
+    print("  " + t("stats_frag_title") + ":")
+    frag_rows = [
+        (t("stats_frag_request"), stats["frag_REQUEST"]),
+        (t("stats_frag_response"), stats["frag_RESPONSE"]),
+        (t("stats_frag_think_kept"), stats["frag_THINK"]),
+        (t("stats_frag_think_dropped"), stats["frag_THINK_dropped"]),
+        (t("stats_frag_file"), stats["frag_FILE"]),
+        (t("stats_frag_unknown"), stats["frag_unknown"]),
+    ]
+    fwidth = max(len(label) for label, _ in frag_rows) + 2
+    for label, value in frag_rows:
+        print(f"    {label:<{fwidth}}: {value}")
+    print(f"  {t('stats_warnings')}: {len(warnings)}")
 
     # ---- 写日志 ----
     log_path = args.output + ".log"
     if not args.dry_run:
         with open(log_path, "w", encoding="utf-8") as f:
-            f.write("sunshinemahiru_deepseek_to_ucs 转换日志\n")
-            f.write(f"输入: {args.input}\n")
-            f.write(f"输出: {args.output}\n")
-            f.write(f"警告/跳过 {len(warnings)} 条\n")
+            f.write(t("log_header") + "\n")
+            f.write(t("log_input", path=args.input) + "\n")
+            f.write(t("log_output", path=args.output) + "\n")
+            f.write(t("log_warn_count", n=len(warnings)) + "\n")
             f.write("-" * 60 + "\n")
             for w in warnings:
                 f.write(w + "\n")
         if warnings:
-            print(f"  日志已写入: {log_path}")
+            print(t("log_written", path=log_path))
     else:
         if warnings:
-            print(f"  [dry-run] 跳过 {len(warnings)} 条，未写日志")
+            print(t("dryrun_no_log", n=len(warnings)))
 
     # ---- 写输出 ----
     if args.dry_run:
-        print("\n[dry-run] 未写入输出文件")
+        print("\n" + t("dryrun_no_output"))
         return 0
 
     with open(args.output, "w", encoding="utf-8") as f:
         json.dump(out, f, ensure_ascii=False, indent=2)
 
-    print(f"\n输出已写入: {args.output}")
+    print("\n" + t("output_written", path=args.output))
     return 0
 
 

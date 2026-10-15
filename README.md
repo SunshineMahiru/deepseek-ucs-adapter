@@ -4,51 +4,54 @@
 [![License](https://img.shields.io/badge/License-MIT-green)](./LICENSE)
 [![Status](https://img.shields.io/badge/Status-stable-brightgreen)]()
 
+[English](./README.md) | [中文](./README.zh-CN.md)
+
 > Convert DeepSeek web-export conversations.json into a portable UCS (Universal Cognitive Schema) user profile. Rewrites DeepSeek's `fragments[]` into the ChatGPT `content.parts[]` mapping ucs-parser understands. Privacy-first: raw conversations stay out of the repo. Includes a style card and injection templates for Hermes / Claude Code / DSH.
 
-## 解决什么问题
+## What problem does this solve?
 
-DeepSeek 网页版导出的 `conversations.json` 虽然也是 `mapping` 树结构，但消息内容存放在 `message.fragments[]` 中（实测共 8 种 fragment 类型：REQUEST / RESPONSE / THINK / TOOL_OPEN / TOOL_SEARCH / TOOL_FIND / SEARCH / FILE）。
+DeepSeek's web export (`conversations.json`) is a `mapping` tree, but message content lives in `message.fragments[]` (8 fragment types observed in practice: REQUEST / RESPONSE / THINK / TOOL_OPEN / TOOL_SEARCH / TOOL_FIND / SEARCH / FILE).
 
-而 [ucs-parser](https://github.com/XwhyZ-WHYLD/universal-cognitive-schema)（Universal Cognitive Schema 参考实现）只读取 ChatGPT 格式的三个字段——`message.author.role`、`message.content.parts[]`、`message.create_time`。直接把 DeepSeek 导出喂进去，会得到 Persona 0.30、Interaction 0.10 的极低分，画像几乎为空。
+[ucs-parser](https://github.com/XwhyZ-WHYLD/universal-cognitive-schema) (the Universal Cognitive Schema reference implementation) only reads three ChatGPT-format fields — `message.author.role`, `message.content.parts[]`, `message.create_time`. Feed it a DeepSeek export directly and you get Persona 0.30, Interaction 0.10 — an almost-empty profile.
 
-本项目做两件事：
+This project does two things:
 
-1. **格式转换**：把 DeepSeek 的 `fragments[]` 无损转换为 ChatGPT 的 `content.parts[]`，让 ucs-parser 能正确提取画像。
-2. **风格蒸馏**：基于 2856 条真实 user 消息的语言学调研，产出手工风格卡片 + 三种 Agent 注入模板，让画像真正落地到 Agent 行为。
+1. **Format conversion**: losslessly rewrite DeepSeek `fragments[]` into ChatGPT `content.parts[]` so ucs-parser can extract a real profile.
+2. **Style distillation**: based on a linguistic study of 2,856 real user messages, ship a hand-crafted style card plus three Agent injection templates that turn the profile into concrete Agent behaviour.
 
-## 特性
+## Features
 
-- ✅ DeepSeek fragments → ChatGPT mapping 无损转换（8 种 fragment 类型全处理）
-- ✅ 确定性 UUID v4（可 diff、可复现、幂等）
-- ✅ 隐私保护：原始对话数据物理隔离，仓库不含任何真实对话内容
-- ✅ 中文语料实证：基于 2856 条 user 消息的修复行为调研
-- ✅ 提供 3 种 Agent 注入模板（Hermes / Claude Code / DSH）
-- ⚠️ Interaction patterns 维度对中文数据有结构性上限（见「局限性」）
+- ✅ Lossless DeepSeek fragments → ChatGPT mapping conversion (all 8 fragment types handled)
+- ✅ Deterministic UUID v4 (diff-able, reproducible, idempotent)
+- ✅ Privacy-first: raw conversation data is physically excluded from the repo
+- ✅ Chinese-corpus empirical grounding: repair-behaviour study over 2,856 user messages
+- ✅ 3 Agent injection templates (Hermes / Claude Code / DSH)
+- ✅ Bilingual CLI: `--lang zh|en`
+- ⚠️ Interaction patterns has a structural ceiling for Chinese data (see Limitations)
 
-## 快速开始
+## Quick start
 
-### 安装
+### Installation
 
 ```bash
-# 只需 Python 3.10+
-git clone https://github.com/sunshinemahiru/deepseek-ucs-adapter.git
+# Requires Python 3.10+
+git clone https://github.com/SunshineMahiru/deepseek-ucs-adapter.git
 cd deepseek-ucs-adapter
 
-# 安装 UCS 解析器（用于生成画像）
+# Install the UCS parser (to generate the profile)
 pip install ucs-parser
 ```
 
-### 使用
+### Usage
 
 ```bash
-# 1. 从 DeepSeek 网页版导出 conversations.json（见下方「数据获取」）
-# 2. 转换为 ChatGPT mapping 格式（位置参数：输入 输出）
+# 1. Export conversations.json from the DeepSeek web app (see "Getting your data")
+# 2. Convert to ChatGPT mapping format (positional args: input output)
 python sunshinemahiru_deepseek_to_ucs.py \
   /path/to/conversations.json \
   /path/to/conversations_chatgpt.json
 
-# 3. 生成 UCS 画像
+# 3. Generate the UCS profile
 python -c "
 from ucs_parser import Parser
 r = Parser(source='chatgpt').from_file('conversations_chatgpt.json')
@@ -57,19 +60,19 @@ print(r.fidelity_report())
 "
 ```
 
-转换脚本额外参数：`--verbose`、`--dry-run`、`--limit N`、`--merge-think/--no-merge-think`。
+Extra flags: `--verbose`, `--dry-run`, `--limit N`, `--merge-think/--no-merge-think`, `--lang zh|en` (English UI: `--lang en`).
 
-### 输出示例
+### Sample output
 
-见 `examples/sample_profile.json`（脱敏示例：领域名替换为 `Domain A–J`，日期模糊化）。真实画像因含个人领域与时间信息，不入库。
+See `examples/sample_profile.json` (sanitized sample: domain names replaced with `Domain A–J`, dates fuzzed). The real profile is not committed because it contains personal domains and timestamps.
 
-## 数据获取
+## Getting your data
 
-DeepSeek 网页版 → **系统设置** → **数据管理** → **导出所有历史对话** → 解压得到 `conversations.json`。
+DeepSeek web app → **Settings** → **Data management** → **Export all conversations** → unzip to get `conversations.json`.
 
-> 隐私提示：导出的 `conversations.json` 含你的全部对话原文，切勿提交到公开仓库。本项目 `.gitignore` 已默认排除 `conversations*.json`。
+> Privacy note: the exported `conversations.json` contains your full conversation text — never commit it to a public repo. This repo's `.gitignore` excludes `conversations*.json` by default.
 
-## 架构
+## Architecture
 
 ```
 DeepSeek conversations.json
@@ -78,53 +81,55 @@ DeepSeek conversations.json
         ↓
 ChatGPT mapping format
         ↓
-[ucs-parser]                          # 7 维度画像蒸馏
+[ucs-parser]                          # 7-dimension profile distillation
         ↓
 UCS profile (my_profile.ucs.json)
         ↓
-[风格卡片.md + injection_snippets.md] # 手工规则 + 注入模板
+[风格卡片.md + injection_snippets.md] # hand-crafted rules + injection templates
         ↓
-Agent 适配
+Agent adaptation
 ```
 
-## 项目结构
+## Project structure
 
 ```
 .
-├── sunshinemahiru_deepseek_to_ucs.py   # 核心转换脚本（仅标准库）
-├── 风格卡片.md                          # 手工交互模式卡片
-├── injection_snippets.md               # 3 种 Agent 注入模板
-├── 调研与方案设计.md                     # 调研报告 + 方案设计
+├── sunshinemahiru_deepseek_to_ucs.py   # core converter (stdlib only)
+├── 风格卡片.md                          # hand-crafted interaction style card
+├── injection_snippets.md               # 3 Agent injection templates
+├── 调研与方案设计.md                     # research report + design
 ├── examples/
-│   └── sample_profile.json             # 脱敏示例输出
-├── analyze_deepseek.py                 # DeepSeek 结构分析脚本
-├── research_fix_analysis.py            # 中文修复行为调研脚本
-└── README.md
+│   └── sample_profile.json             # sanitized sample output
+├── analyze_deepseek.py                 # DeepSeek structure analysis script
+├── research_fix_analysis.py            # repair-behaviour research script
+├── README.md                           # this file (English)
+├── README.zh-CN.md                     # Chinese version
+└── LICENSE
 ```
 
-## 调研发现
+## Research findings
 
-基于 2856 条 user 消息的实证（详见 `调研与方案设计.md`）：
+Empirical results over 2,856 user messages (see `调研与方案设计.md`):
 
-- 结构绑定真纠正标记（并不 / 又不是 / 我的意思是 / 你理解错了）：**0–2 次**
-- 显式重答（"重新回答"）：**6–7 次**
-- 90% 的"含转折词"候选消息是全新需求，**0% 是显式纠正**
+- Structure-bound explicit correction markers ("you misunderstood me", etc.): **0–2 occurrences**
+- Explicit redo ("重新回答" / "answer again"): **6–7 occurrences**
+- 90% of "turn-taking" candidates are brand-new requests, **0% are explicit corrections**
 
-**结论**：ucs-parser 的 `corrections` 概念对"中文分析型协作"场景结构性稀缺，继续优化正则边际收益极低，故转向手工风格卡片规则。
+**Conclusion**: ucs-parser's `corrections` concept is structurally scarce in a Chinese analytical-collaboration corpus, so further regex tuning has marginal value. This project ships a hand-crafted style card instead.
 
-## 局限性
+## Limitations
 
-- ucs-parser v0.1.0 仅支持 ChatGPT 格式，需先经本脚本转换
-- Interaction patterns 对中文数据有结构性上限（实测 0.41），因显式纠正信号稀缺
-- `language_preferences` 被 ucs-parser 硬编码为 `"en"`，不支持中文检测
-- 转换脚本覆盖 DeepSeek fragments 的 8 种实测类型；若 DeepSeek 未来新增类型，需相应扩展
+- ucs-parser v0.1.0 only accepts ChatGPT format — conversion is required first
+- Interaction patterns has a structural ceiling for Chinese data (measured 0.41), due to scarce explicit correction signals
+- `language_preferences` is hardcoded to `"en"` by ucs-parser, with no Chinese detection
+- The converter covers the 8 observed DeepSeek fragment types; new types will need extension
 
-## 许可证
+## License
 
 [MIT](./LICENSE)
 
-## 致谢
+## Acknowledgements
 
-- [ucs-parser](https://github.com/XwhyZ-WHYLD/universal-cognitive-schema) — Universal Cognitive Schema 参考实现
-- [ChatInsights](https://github.com/CouriusDeveloper/ChatInsights) — DeepSeek fragments 解析参考
-- [ai-conversation-exporter](https://github.com/toke648/chatgpt_to_md) — fragments 处理参考
+- [ucs-parser](https://github.com/XwhyZ-WHYLD/universal-cognitive-schema) — Universal Cognitive Schema reference implementation
+- [ChatInsights](https://github.com/CouriusDeveloper/ChatInsights) — DeepSeek fragments parsing reference
+- [ai-conversation-exporter](https://github.com/toke648/chatgpt_to_md) — fragments handling reference
