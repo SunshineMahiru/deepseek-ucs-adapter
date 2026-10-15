@@ -1,0 +1,25 @@
+# 数据文件（隐私，物理隔离后仍加双重保险）
+conversations*.json
+*_profile.json
+*.ucs.json
+# 脱敏示例例外，需进仓库
+!examples/sample_profile.json
+
+# 日志与备份
+*.log
+*.backup
+*.experiment-backup
+
+# Python 缓存
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+
+# 工具目录
+.workbuddy/
+
+# IDE
+.vscode/
+.idea/

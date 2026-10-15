@@ -1,0 +1,158 @@
+{
+  "ucs_version": "0.1.0",
+  "profile_id": "d7fd0543-a6d2-403b-93dd-2ed9b960699e",
+  "created_at": "2026-10-15T14:29:47.623551Z",
+  "updated_at": "2026-10-15T14:29:47.623551Z",
+  "schema_url": "https://ucs-standard.org/schema/v0.1.0/ucs.schema.json",
+  "persona": {
+    "communication_style": {
+      "direct": 0.8,
+      "collaborative": 0.14,
+      "socratic": 0.01,
+      "narrative": 0.05
+    },
+    "formality": 0.5,
+    "verbosity": 1.0,
+    "tone_markers": [
+      "detailed prompts"
+    ],
+    "language_preferences": {
+      "primary": "en",
+      "others": []
+    }
+  },
+  "expertise_map": {
+    "domains": [
+      {
+        "name": "Domain A",
+        "depth": "expert"
+      },
+      {
+        "name": "Domain B",
+        "depth": "proficient"
+      },
+      {
+        "name": "Domain C",
+        "depth": "proficient"
+      },
+      {
+        "name": "Domain D",
+        "depth": "proficient"
+      },
+      {
+        "name": "Domain E",
+        "depth": "functional"
+      },
+      {
+        "name": "Domain F",
+        "depth": "functional"
+      },
+      {
+        "name": "Domain G",
+        "depth": "aware"
+      },
+      {
+        "name": "Domain H",
+        "depth": "aware"
+      },
+      {
+        "name": "Domain I",
+        "depth": "aware"
+      },
+      {
+        "name": "Domain J",
+        "depth": "aware"
+      }
+    ]
+  },
+  "project_graph": {
+    "active": [],
+    "archived": []
+  },
+  "preference_corpus": {
+    "output_format": "structured",
+    "response_length": "moderate",
+    "code_language_preferences": [
+      "Domain C",
+      "Domain D",
+      "Domain F",
+      "Domain H"
+    ],
+    "custom": {}
+  },
+  "interaction_patterns": {
+    "typical_prompt_style": {
+      "opener": "command",
+      "structure": "multi-paragraph",
+      "avg_length": "long"
+    },
+    "common_corrections": [
+      "Wants detailed responses"
+    ],
+    "reinforced_behaviours": [],
+    "rejected_behaviours": []
+  },
+  "temporal_context": {
+    "recency_weight": 0.7,
+    "life_chapters": [
+      {
+        "label": "AI usage period (2026-XX – present)",
+        "from": "2026-XX-XX",
+        "active": true,
+        "notes": "Inferred from user messages across multiple conversation(s) spanning 2026-XX to present."
+      }
+    ]
+  },
+  "extensions": {},
+  "provenance": {
+    "source_platforms": [
+      "chatgpt"
+    ],
+    "extraction_method": "export",
+    "sanitised": true,
+    "sanitised_at": "2026-10-15T14:29:47.623551Z"
+  },
+  "fidelity": {
+    "generated_at": "2026-10-15T14:29:47.624550Z",
+    "overall": {
+      "score": 0.49,
+      "note": "Moderate fidelity — profile would benefit from more interaction data.",
+      "interaction_count": 6055
+    },
+    "persona": {
+      "score": 0.99,
+      "note": "High confidence — inferred from 6,055 interactions.",
+      "interaction_count": 6055
+    },
+    "expertise_map": {
+      "score": 0.75,
+      "note": "10 domain(s) identified; depth variety: 4 level(s).",
+      "interaction_count": 6055
+    },
+    "project_graph": {
+      "score": 0.05,
+      "note": "Project graph present but empty.",
+      "interaction_count": 6055
+    },
+    "preference_corpus": {
+      "score": 0.65,
+      "note": "Good confidence — inferred from 6,055 interactions.",
+      "interaction_count": 6055
+    },
+    "interaction_patterns": {
+      "score": 0.41,
+      "note": "1 correction(s), 0 reinforced, 0 rejected behaviour(s).",
+      "interaction_count": 6055
+    },
+    "trust_boundaries": {
+      "score": 0.0,
+      "note": "No trust boundary data.",
+      "interaction_count": 6055
+    },
+    "temporal_context": {
+      "score": 0.55,
+      "note": "1 life chapter(s) defined.",
+      "interaction_count": 6055
+    }
+  }
+}
