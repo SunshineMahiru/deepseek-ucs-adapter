@@ -1,0 +1,20 @@
+.git
+.github
+.workbuddy
+.vscode
+.idea
+
+__pycache__
+*.py[cod]
+*.egg-info
+build
+dist/*.tar.gz
+
+# user data must never reach the image
+conversations*.json
+*_profile.json
+*.ucs.json
+
+examples
+*.md
+*.log

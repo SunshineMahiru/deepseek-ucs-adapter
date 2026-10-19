@@ -1,0 +1,53 @@
+# Packaging metadata only — no source code lives here.
+# Build: python -m build  ->  dist/*.whl + dist/*.tar.gz
+
+[build-system]
+requires = ["setuptools>=77", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "deepseek-ucs-adapter"
+version = "0.1.0"
+description = "Convert DeepSeek web-export conversations.json into a UCS-compatible ChatGPT mapping file."
+readme = "README.md"
+requires-python = ">=3.10"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [
+  { name = "SunshineMahiru (曦昼Sunshine)", email = "nekobear.x@outlook.com" },
+]
+keywords = [
+  "ucs",
+  "ucs-parser",
+  "deepseek",
+  "conversation-export",
+  "persona",
+  "converter",
+]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Environment :: Console",
+  "Intended Audience :: End Users/Desktop",
+  "Natural Language :: Chinese (Simplified)",
+  "Natural Language :: English",
+  "Operating System :: OS Independent",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3 :: Only",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Topic :: Text Processing :: Linguistic",
+  "Topic :: Utilities",
+]
+
+[project.urls]
+Homepage = "https://github.com/SunshineMahiru/deepseek-ucs-adapter"
+Repository = "https://github.com/SunshineMahiru/deepseek-ucs-adapter"
+Issues = "https://github.com/SunshineMahiru/deepseek-ucs-adapter/issues"
+
+[project.scripts]
+deepseek-ucs = "deepseek_to_ucs:main"
+
+[tool.setuptools]
+py-modules = ["deepseek_to_ucs"]

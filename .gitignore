@@ -23,3 +23,8 @@ venv/
 # IDE
 .vscode/
 .idea/
+
+# 构建产物（发行流程生成，不入库）
+dist/
+build/
+*.egg-info/

@@ -1,0 +1,17 @@
+include LICENSE
+include README.md
+include README.zh-CN.md
+include injection_snippets.md
+include 调研与方案设计.md
+include 风格卡片.md
+include analyze_deepseek.py
+include research_fix_analysis.py
+recursive-include examples *.json
+
+# never ship user data or build leftovers inside the sdist
+global-exclude *.py[cod] __pycache__/*
+prune .git
+prune .github
+prune dist
+prune build
+prune .workbuddy
