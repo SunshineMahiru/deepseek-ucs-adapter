@@ -55,23 +55,28 @@ jobs:
           echo "tag=${tag}" >> "$GITHUB_OUTPUT"
           echo "resolved tag: ${tag}"
 
+      # SHA256SUMS is deliberately downloaded OUTSIDE dist/ : the PyPI action
+      # runs `twine check`/`twine upload` over every file in packages-dir, and
+      # twine aborts with InvalidDistribution on anything that is not a dist.
       - name: Download release assets
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          mkdir -p dist
+          mkdir -p dist checksums
           gh release download "${{ steps.tag.outputs.tag }}" \
             --repo "${GITHUB_REPOSITORY}" \
-            --pattern "*.whl" --pattern "*.tar.gz" --pattern "SHA256SUMS" \
-            --dir dist
-          ls -l dist
+            --pattern "*.whl" --pattern "*.tar.gz" --dir dist
+          gh release download "${{ steps.tag.outputs.tag }}" \
+            --repo "${GITHUB_REPOSITORY}" \
+            --pattern "SHA256SUMS" --dir checksums
+          ls -l dist checksums
 
       - name: Verify checksums
         run: |
           set -euo pipefail
           cd dist
-          sha256sum -c SHA256SUMS
+          sha256sum -c ../checksums/SHA256SUMS
 
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1

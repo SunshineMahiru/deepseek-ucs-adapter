@@ -52,6 +52,17 @@ jobs:
       - name: Build sdist and wheel
         run: python -m build
 
+      # Prove the artifact itself works before it is attached to a release:
+      # install the wheel into a clean venv (no index, so an accidental
+      # dependency shows up as a failure) and invoke the console script.
+      - name: Smoke-test the built wheel
+        run: |
+          set -euo pipefail
+          python -m venv .smoke
+          .smoke/bin/python -m pip install --no-index --quiet dist/*.whl
+          .smoke/bin/deepseek-ucs --help > /dev/null
+          echo "console script ok"
+
       - name: Generate checksums
         run: |
           cd dist

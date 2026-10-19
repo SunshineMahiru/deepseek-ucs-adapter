@@ -1,0 +1,70 @@
+name: Sync release notes
+
+# The body of every release lives in .github/release-notes/<tag>.md.
+# Editing that file and pushing it refreshes the published (or draft) release
+# body, so the page and the repository cannot drift apart. Release bodies are
+# only writable through the API, which is why this needs a workflow rather
+# than a plain `git push`.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/release-notes/*.md"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag whose release body should be refreshed (e.g. v0.1.0)"
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  sync:
+    name: Refresh release body
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Refresh release body from notes file
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          if [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" ]]; then
+            targets=("${{ inputs.tag }}")
+          else
+            targets=()
+            while IFS= read -r file; do
+              if [[ -z "${file}" || ! -f "${file}" ]]; then
+                continue   # empty line or deleted file
+              fi
+              targets+=("$(basename "${file}" .md)")
+            done < <(git diff --name-only HEAD^ HEAD -- '.github/release-notes/*.md')
+          fi
+
+          if [[ ${#targets[@]} -eq 0 ]]; then
+            echo "::notice::no release-notes changes to sync"
+            exit 0
+          fi
+
+          for tag in "${targets[@]}"; do
+            notes=".github/release-notes/${tag}.md"
+            if [[ ! -f "${notes}" ]]; then
+              echo "::notice::${notes} not present; skipping ${tag}"
+              continue
+            fi
+            if ! gh release view "${tag}" >/dev/null 2>&1; then
+              echo "::notice::no release exists for ${tag}; skipping"
+              continue
+            fi
+            gh release edit "${tag}" --notes-file "${notes}"
+            echo "::notice::release ${tag} body refreshed from ${notes}"
+          done
