@@ -2,8 +2,10 @@ name: Release
 
 # Tag-driven release pipeline. Nothing else in the repository is touched.
 #   git tag v0.1.0 && git push origin v0.1.0
-# Produces: sdist + wheel + SHA256SUMS  ->  GitHub Release assets
+# Produces: sdist + wheel + SHA256SUMS  ->  draft GitHub Release assets
 #           OCI image                   ->  GitHub Packages (ghcr.io)
+# The Release stays a draft until a maintainer reviews it and clicks Publish;
+# that publishes the release and hands off to publish-pypi.yml.
 
 on:
   push:
@@ -110,7 +112,7 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
 
   release:
-    name: Publish GitHub Release
+    name: Create draft GitHub Release
     needs: [build, container]
     runs-on: ubuntu-latest
     permissions:
@@ -125,17 +127,38 @@ jobs:
           name: dist
           path: dist
 
-      - name: Create release with assets
+      # Gate: the release is created as a DRAFT. Nothing is visible on the
+      # Releases page until a maintainer reviews the notes and clicks Publish.
+      # Publishing the draft fires `release: published`, which triggers
+      # publish-pypi.yml -> PyPI upload.
+      - name: Create or refresh draft release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
           tag="${GITHUB_REF_NAME}"
+          title="deepseek-ucs-adapter ${tag}"
           notes=".github/release-notes/${tag}.md"
-          args=(--title "deepseek-ucs-adapter ${tag}" --verify-tag)
-          if [[ -f "${notes}" ]]; then
-            args+=(--notes-file "${notes}")
+          assets=(dist/*.whl dist/*.tar.gz dist/SHA256SUMS)
+
+          if gh release view "${tag}" >/dev/null 2>&1; then
+            # Re-run of an existing release: refresh notes and assets only.
+            # The draft/published state is deliberately left untouched so a
+            # retry can never un-publish a release that is already live.
+            echo "::notice::release ${tag} already exists; refreshing assets, draft state preserved"
+            edit=(--title "${title}")
+            if [[ -f "${notes}" ]]; then
+              edit+=(--notes-file "${notes}")
+            fi
+            gh release edit "${tag}" "${edit[@]}"
+            gh release upload "${tag}" --clobber "${assets[@]}"
           else
-            args+=(--generate-notes)
+            create=(--draft --verify-tag --title "${title}")
+            if [[ -f "${notes}" ]]; then
+              create+=(--notes-file "${notes}")
+            else
+              create+=(--generate-notes)
+            fi
+            gh release create "${tag}" "${create[@]}" "${assets[@]}"
+            echo "::notice::draft ${tag} created - review it, then click Publish to trigger the PyPI upload"
           fi
-          gh release create "${tag}" "${args[@]}" dist/*.whl dist/*.tar.gz dist/SHA256SUMS

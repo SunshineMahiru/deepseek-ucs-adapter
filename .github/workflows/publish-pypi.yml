@@ -1,0 +1,82 @@
+name: Publish to PyPI
+
+# Second stage of the release flow. Nothing reaches PyPI until the draft
+# release produced by release.yml is reviewed and published by a maintainer,
+# because a PyPI version can only be yanked, never deleted.
+#
+# Authentication: PyPI Trusted Publishing (OIDC) - no long-lived token needed.
+#   PyPI -> Publishing -> add a pending publisher with:
+#     PyPI project name : deepseek-ucs-adapter
+#     Owner             : SunshineMahiru
+#     Repository        : deepseek-ucs-adapter
+#     Workflow name     : publish-pypi.yml
+#     Environment       : pypi
+# Alternatively, set a repository secret PYPI_API_TOKEN and it takes precedence.
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Already-released tag to upload (e.g. v0.1.0)"
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pypi-${{ github.event.release.tag_name || inputs.tag }}
+  cancel-in-progress: false
+
+jobs:
+  upload:
+    name: Upload release assets to PyPI
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/p/deepseek-ucs-adapter
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Resolve tag
+        id: tag
+        env:
+          EVENT_TAG: ${{ github.event.release.tag_name }}
+          INPUT_TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          tag="${EVENT_TAG:-${INPUT_TAG}}"
+          if [[ -z "${tag}" ]]; then
+            echo "::error::no tag resolved"
+            exit 1
+          fi
+          echo "tag=${tag}" >> "$GITHUB_OUTPUT"
+          echo "resolved tag: ${tag}"
+
+      - name: Download release assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          gh release download "${{ steps.tag.outputs.tag }}" \
+            --repo "${GITHUB_REPOSITORY}" \
+            --pattern "*.whl" --pattern "*.tar.gz" --pattern "SHA256SUMS" \
+            --dir dist
+          ls -l dist
+
+      - name: Verify checksums
+        run: |
+          set -euo pipefail
+          cd dist
+          sha256sum -c SHA256SUMS
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist/
+          password: ${{ secrets.PYPI_API_TOKEN }}
+          skip-existing: true
+          print-hash: true
