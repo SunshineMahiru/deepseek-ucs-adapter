@@ -303,9 +303,13 @@ def convert_conversation(
             continue
         msg = node.get("message")
         if msg is None:
-            # root 节点或占位节点：保留，message 为 null
-            kept[nid] = True
-            role_parts[nid] = (None, None)
+            if nid == root_id:
+                kept[nid] = True
+                role_parts[nid] = (None, None)
+            else:
+                # 没有 message 的占位节点：跳过，由第二遍旁路其子节点
+                kept[nid] = False
+                stats["skipped_nodes"] += 1
             continue
         if not isinstance(msg, dict):
             kept[nid] = False
