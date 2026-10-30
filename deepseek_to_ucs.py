@@ -313,27 +313,35 @@ def convert_conversation(
     kept[root_id] = True
 
     # ---- 第二遍：旁路重挂（把被跳过节点的子节点挂到其父节点） ----
-    def eff_children(nid: str) -> list[str]:
+    def eff_children(nid: str, seen: set[str]) -> list[str]:
         out: list[str] = []
         node = raw.get(nid)
         if not isinstance(node, dict):
             return out
         for c in node.get("children", []) or []:
-            if c not in raw:
+            if c not in raw or c in seen:
                 continue
             if kept.get(c):
                 out.append(c)
             else:
-                out.extend(eff_children(c))
+                seen.add(c)
+                out.extend(eff_children(c, seen))
         return out
 
     def eff_parent(nid: str) -> Optional[str]:
         node = raw.get(nid)
         p = node.get("parent") if isinstance(node, dict) else None
-        while p is not None and p in raw and not kept.get(p):
+        seen = {nid}
+        while p is not None:
+            # parent 指向不存在的节点，或父链成环：当作独立根节点
+            if p in seen or p not in raw:
+                return None
+            seen.add(p)
+            if kept.get(p):
+                return p
             pn = raw.get(p)
             p = pn.get("parent") if isinstance(pn, dict) else None
-        return p
+        return None
 
     # ---- 第三遍：构建输出 mapping（确定性 UUID） ----
     id_map: dict[str, str] = {}
@@ -353,7 +361,7 @@ def convert_conversation(
                 "id": uid,
                 "message": None,
                 "parent": None,
-                "children": [id_map[c] for c in eff_children(nid)],
+                "children": [id_map[c] for c in eff_children(nid, {nid})],
             }
         else:
             parent_nid = eff_parent(nid)
@@ -370,7 +378,7 @@ def convert_conversation(
                     "metadata": {},
                 },
                 "parent": id_map[parent_nid] if parent_nid is not None else None,
-                "children": [id_map[c] for c in eff_children(nid)],
+                "children": [id_map[c] for c in eff_children(nid, {nid})],
             }
             stats["message_nodes"] += 1
 
