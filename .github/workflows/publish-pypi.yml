@@ -61,13 +61,14 @@ jobs:
       - name: Download release assets
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.tag.outputs.tag }}
         run: |
           set -euo pipefail
           mkdir -p dist checksums
-          gh release download "${{ steps.tag.outputs.tag }}" \
+          gh release download "${TAG}" \
             --repo "${GITHUB_REPOSITORY}" \
             --pattern "*.whl" --pattern "*.tar.gz" --dir dist
-          gh release download "${{ steps.tag.outputs.tag }}" \
+          gh release download "${TAG}" \
             --repo "${GITHUB_REPOSITORY}" \
             --pattern "SHA256SUMS" --dir checksums
           ls -l dist checksums

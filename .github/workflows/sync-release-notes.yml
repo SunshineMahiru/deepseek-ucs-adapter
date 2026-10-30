@@ -35,11 +35,12 @@ jobs:
       - name: Refresh release body from notes file
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          INPUT_TAG: ${{ inputs.tag }}
         run: |
           set -euo pipefail
 
           if [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" ]]; then
-            targets=("${{ inputs.tag }}")
+            targets=("${INPUT_TAG}")
           else
             # github.event.before is the tip before the whole push, so a push
             # carrying several commits still syncs every changed notes file.
