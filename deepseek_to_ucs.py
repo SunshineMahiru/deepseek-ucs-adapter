@@ -416,7 +416,13 @@ def convert_conversation(
             continue
         frags = msg.get("fragments") or []
         types = {str(f.get("type") or "").upper() for f in frags if isinstance(f, dict)}
-        role = "user" if "REQUEST" in types else "assistant"
+        if "REQUEST" in types:
+            role = "user"
+        elif "FILE" in types and not types & {"RESPONSE", "THINK"}:
+            # 纯附件节点：用户上传的文件，没有助手回复或推理
+            role = "user"
+        else:
+            role = "assistant"
         parts = extract_parts(frags, merge_think, warn, stats, keep_tools)
         role_parts[nid] = (role, parts)
         if parts:

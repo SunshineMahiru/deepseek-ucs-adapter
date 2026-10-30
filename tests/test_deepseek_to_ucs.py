@@ -102,6 +102,29 @@ class ConvertTest(unittest.TestCase):
         msg = [n["message"] for n in result["mapping"].values() if n["message"]][0]
         self.assertEqual(msg["author"]["role"], "user")
 
+    def test_file_only_node_is_user(self):
+        mapping = {
+            "root": make_node("root", None, ["a"]),
+            "a": make_node("a", "root", [], [
+                {"type": "FILE", "files": [{"file_name": "screenshot.webp"}]},
+            ]),
+        }
+        result = d2u.convert_conversation(make_conv(mapping), True, lambda m: None, empty_stats())
+        msg = [n["message"] for n in result["mapping"].values() if n["message"]][0]
+        self.assertEqual(msg["author"]["role"], "user")
+
+    def test_file_with_response_stays_assistant(self):
+        mapping = {
+            "root": make_node("root", None, ["a"]),
+            "a": make_node("a", "root", [], [
+                {"type": "FILE", "files": [{"file_name": "out.pdf"}]},
+                {"type": "RESPONSE", "content": "生成好了"},
+            ]),
+        }
+        result = d2u.convert_conversation(make_conv(mapping), True, lambda m: None, empty_stats())
+        msg = [n["message"] for n in result["mapping"].values() if n["message"]][0]
+        self.assertEqual(msg["author"]["role"], "assistant")
+
     def test_missing_parent_becomes_root(self):
         mapping = {
             "root": make_node("root", None, []),
