@@ -29,7 +29,7 @@ DeepSeek 网页版导出的 `conversations.json` 虽然也是 `mapping` 树结�
 | fragments → parts 转换 | 把 `REQUEST`、`RESPONSE`、`THINK`、`FILE` 映射进 `content.parts[]`；纯工具类片段没有文本，直接跳过 |
 | 确定性 UUID v4 | 输出可复现、可 diff |
 | 隐私优先设计 | 原始对话数据物理隔离，不进入仓库 |
-| 双语 CLI | `--lang zh|en` 切换界面文案、错误与统计 |
+| 双语 CLI | `--lang zh|en` 切换工具自身的提示与统计；argparse 的用法行保持英文 |
 | 语料实证 | 风格卡片基于 2856 条真实消息的语言学调研蒸馏 |
 
 ## 架构

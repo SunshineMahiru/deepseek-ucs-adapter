@@ -29,7 +29,7 @@ This project does two things:
 | Fragments → parts conversion | Maps `REQUEST`, `RESPONSE`, `THINK` and `FILE` into `content.parts[]`; tool-only types carry no text and are skipped |
 | Deterministic UUID v4 | Reproducible, diff-able output across runs |
 | Privacy-first design | Raw conversation data is physically excluded from the repository |
-| Bilingual CLI | `--lang zh|en` switches UI text, errors, and statistics |
+| Bilingual CLI | `--lang zh|en` switches the tool's own messages and statistics; argparse usage lines stay in English |
 | Empirical grounding | Style card distilled from a linguistic study of 2,856 real messages |
 
 ## Architecture
