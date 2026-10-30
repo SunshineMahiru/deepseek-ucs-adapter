@@ -19,14 +19,14 @@ DeepSeek's web export (`conversations.json`) is a `mapping` tree, but message co
 
 This project does two things:
 
-1. **Format conversion** — losslessly rewrite DeepSeek `fragments[]` into ChatGPT `content.parts[]` so ucs-parser can extract a real profile.
+1. **Format conversion** — rewrite DeepSeek `fragments[]` into ChatGPT `content.parts[]` so ucs-parser can extract a real profile. Text-bearing fragments are preserved; tool-only fragments carry no text and are dropped.
 2. **Style distillation** — from a linguistic study of 2,856 real user messages, ship a hand-crafted style card plus three Agent injection templates that turn the profile into concrete Agent behaviour.
 
 ## Highlights
 
 | Highlight | Why it matters |
 |---|---|
-| Lossless fragments → parts conversion | Handles all eight observed DeepSeek fragment types so ucs-parser extracts a real profile |
+| Fragments → parts conversion | Maps `REQUEST`, `RESPONSE`, `THINK` and `FILE` into `content.parts[]`; tool-only types carry no text and are skipped |
 | Deterministic UUID v4 | Reproducible, diff-able output across runs |
 | Privacy-first design | Raw conversation data is physically excluded from the repository |
 | Bilingual CLI | `--lang zh|en` switches UI text, errors, and statistics |
@@ -145,6 +145,7 @@ Conclusion: ucs-parser's `corrections` concept is structurally scarce in a Chine
 - Interaction patterns has a structural ceiling for Chinese data (measured 0.41), due to scarce explicit correction signals
 - `language_preferences` is hardcoded to `"en"` by ucs-parser, with no Chinese detection
 - The converter covers the eight observed DeepSeek fragment types; new types will need extension
+- Tool-only fragments (`TOOL_OPEN`, `TOOL_SEARCH`, `TOOL_FIND`, `SEARCH`) carry no text and are dropped, so search results and tool-call traces do not reach the output
 
 ## License
 

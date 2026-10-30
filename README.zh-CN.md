@@ -19,14 +19,14 @@ DeepSeek 网页版导出的 `conversations.json` 虽然也是 `mapping` 树结�
 
 本项目做两件事：
 
-1. **格式转换** —— 把 DeepSeek 的 `fragments[]` 无损转换为 ChatGPT 的 `content.parts[]`，让 ucs-parser 能正确提取画像。
+1. **格式转换** —— 把 DeepSeek 的 `fragments[]` 改写为 ChatGPT 的 `content.parts[]`，让 ucs-parser 能正确提取画像。带文本的片段保留，纯工具类片段没有文本，会被丢弃。
 2. **风格蒸馏** —— 基于 2856 条真实 user 消息的语言学调研，产出手工风格卡片 + 三种 Agent 注入模板，让画像真正落地到 Agent 行为。
 
 ## 亮点
 
 | 亮点 | 价值 |
 |---|---|
-| fragments → parts 无损转换 | 覆盖全部八种 DeepSeek fragment 类型，让 ucs-parser 提取出真实画像 |
+| fragments → parts 转换 | 把 `REQUEST`、`RESPONSE`、`THINK`、`FILE` 映射进 `content.parts[]`；纯工具类片段没有文本，直接跳过 |
 | 确定性 UUID v4 | 输出可复现、可 diff |
 | 隐私优先设计 | 原始对话数据物理隔离，不进入仓库 |
 | 双语 CLI | `--lang zh|en` 切换界面文案、错误与统计 |
@@ -145,6 +145,7 @@ DeepSeek 网页版 → **系统设置** → **数据管理** → **导出所有�
 - Interaction patterns 对中文数据有结构性上限（实测 0.41），因显式纠正信号稀缺
 - `language_preferences` 被 ucs-parser 硬编码为 `"en"`，不支持中文检测
 - 转换脚本覆盖八种实测 DeepSeek fragment 类型；若 DeepSeek 未来新增类型，需相应扩展
+- 纯工具类片段（`TOOL_OPEN`、`TOOL_SEARCH`、`TOOL_FIND`、`SEARCH`）没有文本，会被丢弃，搜索结果与工具调用轨迹不进入输出
 
 ## 许可证
 
