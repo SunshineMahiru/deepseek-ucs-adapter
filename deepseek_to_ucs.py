@@ -51,10 +51,12 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import sys
 import unicodedata
 import uuid
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, Callable, Optional
 
 
@@ -98,6 +100,8 @@ MSG: dict[str, dict[str, str]] = {
 
     # 错误
     "err_read_input": {"zh": "错误：无法读取输入文件：{e}", "en": "Error: cannot read input file: {e}"},
+    "err_write_log": {"zh": "错误：无法写入日志文件：{e}", "en": "Error: cannot write log file: {e}"},
+    "err_write_output": {"zh": "错误：无法写入输出文件：{e}", "en": "Error: cannot write output file: {e}"},
     "warn_top_not_array": {"zh": "警告：输入顶层不是数组（{t}），已包装为单元素数组", "en": "Warning: top-level input is not an array ({t}), wrapped as a single-element array"},
 
     # 进度 / verbose
@@ -574,14 +578,18 @@ def main(argv: Optional[list[str]] = None) -> int:
     # ---- 写日志 ----
     log_path = args.output + ".log"
     if not args.dry_run:
-        with open(log_path, "w", encoding="utf-8") as f:
-            f.write(t("log_header") + "\n")
-            f.write(t("log_input", path=args.input) + "\n")
-            f.write(t("log_output", path=args.output) + "\n")
-            f.write(t("log_warn_count", n=len(warnings)) + "\n")
-            f.write("-" * 60 + "\n")
-            for w in warnings:
-                f.write(w + "\n")
+        try:
+            with open(log_path, "w", encoding="utf-8") as f:
+                f.write(t("log_header") + "\n")
+                f.write(t("log_input", path=args.input) + "\n")
+                f.write(t("log_output", path=args.output) + "\n")
+                f.write(t("log_warn_count", n=len(warnings)) + "\n")
+                f.write("-" * 60 + "\n")
+                for w in warnings:
+                    f.write(w + "\n")
+        except OSError as e:
+            print(t("err_write_log", e=e), file=sys.stderr)
+            return 2
         if warnings:
             print(t("log_written", path=log_path))
     else:
@@ -593,8 +601,15 @@ def main(argv: Optional[list[str]] = None) -> int:
         print("\n" + t("dryrun_no_output"))
         return 0
 
-    with open(args.output, "w", encoding="utf-8") as f:
-        json.dump(out, f, ensure_ascii=False, indent=2)
+    tmp_path = args.output + ".tmp"
+    try:
+        with open(tmp_path, "w", encoding="utf-8") as f:
+            json.dump(out, f, ensure_ascii=False, indent=2)
+        os.replace(tmp_path, args.output)
+    except OSError as e:
+        Path(tmp_path).unlink(missing_ok=True)
+        print(t("err_write_output", e=e), file=sys.stderr)
+        return 2
 
     print("\n" + t("output_written", path=args.output))
     return 0
