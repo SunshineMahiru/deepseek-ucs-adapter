@@ -129,6 +129,10 @@ MSG: dict[str, dict[str, str]] = {
     "stats_frag_unknown": {"zh": "unknown/工具类", "en": "unknown/tool"},
     "stats_warnings": {"zh": "警告/跳过记录", "en": "Warnings/skips"},
 
+    # 写入消息内容的标记
+    "tag_reasoning": {"zh": "[REASONING] {text}", "en": "[REASONING] {text}"},
+    "tag_file": {"zh": "[文件] {name}", "en": "[FILE] {name}"},
+
     # 日志 / 输出
     "log_header": {"zh": "deepseek_to_ucs 转换日志", "en": "deepseek_to_ucs conversion log"},
     "log_input": {"zh": "输入: {path}", "en": "Input: {path}"},
@@ -245,7 +249,7 @@ def extract_parts(
             stats["frag_THINK"] += 1
             text = str(content).strip()
             if text:
-                parts.append(f"[REASONING] {text}")
+                parts.append(t("tag_reasoning", text=text))
 
         elif ftype == "FILE":
             # 保留附件文件名（用户上传的图片/文档）
@@ -259,7 +263,7 @@ def extract_parts(
                 if isinstance(fobj, dict) and fobj.get("file_name"):
                     produced += 1
                     stats["frag_FILE"] += 1
-                    parts.append(f"[文件] {fobj['file_name']}")
+                    parts.append(t("tag_file", name=fobj["file_name"]))
             if not produced:
                 stats["skipped_fragments"] += 1
                 warn(t("warn_file_no_name"))
