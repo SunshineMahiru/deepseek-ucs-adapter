@@ -140,6 +140,19 @@ class ConvertTest(unittest.TestCase):
         self.assertEqual(len(result["mapping"]), 1)
         self.assertEqual(stats["skipped_nodes"], 1)
 
+    def test_root_with_non_dict_message_stays_root(self):
+        mapping = {
+            "root": {"id": "root", "parent": None, "children": ["a"], "message": "broken"},
+            "a": make_node("a", "root", [], [{"type": "REQUEST", "content": "hi"}]),
+        }
+        stats = empty_stats()
+        result = d2u.convert_conversation(make_conv(mapping), True, lambda m: None, stats)
+        self.assertIsNotNone(result)
+        self.assertEqual(len(result["mapping"]), 2)
+        roots = [n for n in result["mapping"].values() if n["message"] is None]
+        self.assertEqual(len(roots), 1)
+        self.assertEqual(stats["skipped_nodes"], 0)
+
     def test_null_placeholder_is_bypassed(self):
         mapping = {
             "root": make_node("root", None, ["p"]),

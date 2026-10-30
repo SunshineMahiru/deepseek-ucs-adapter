@@ -359,9 +359,14 @@ def convert_conversation(
                 stats["skipped_nodes"] += 1
             continue
         if not isinstance(msg, dict):
-            kept[nid] = False
-            stats["skipped_nodes"] += 1
             warn(t("warn_msg_not_dict", id=nid))
+            if nid == root_id:
+                # root 的 message 损坏：按 message 为 null 处理，保留整棵树
+                kept[nid] = True
+                role_parts[nid] = (None, None)
+            else:
+                kept[nid] = False
+                stats["skipped_nodes"] += 1
             continue
         frags = msg.get("fragments") or []
         types = {str(f.get("type") or "").upper() for f in frags if isinstance(f, dict)}
