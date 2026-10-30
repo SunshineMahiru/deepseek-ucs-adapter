@@ -79,6 +79,31 @@ class ConvertTest(unittest.TestCase):
         self.assertEqual(stats["message_nodes"], 2)
         self.assertEqual(stats["skipped_nodes"], 0)
 
+    def test_current_node_prefers_the_newest_leaf(self):
+        mapping = {
+            "root": make_node("root", None, ["u"]),
+            "u": make_node("u", "root", ["late", "early"], [{"type": "REQUEST", "content": "q"}]),
+            "late": make_node("late", "u", [], [{"type": "RESPONSE", "content": "更晚"}],
+                              when="2026-10-15T10:09:00+08:00"),
+            "early": make_node("early", "u", [], [{"type": "RESPONSE", "content": "更早"}],
+                               when="2026-10-15T10:02:00+08:00"),
+        }
+        result = d2u.convert_conversation(make_conv(mapping), True, lambda m: None, empty_stats())
+        current = result["mapping"][result["current_node"]]
+        self.assertEqual(current["message"]["content"]["parts"], ["更晚"])
+
+    def test_current_node_falls_back_to_the_last_leaf_without_timestamps(self):
+        mapping = {
+            "root": make_node("root", None, ["a"]),
+            "a": {"id": "a", "parent": "root", "children": ["b"],
+                  "message": {"fragments": [{"type": "RESPONSE", "content": "第一"}]}},
+            "b": {"id": "b", "parent": "a", "children": [],
+                  "message": {"fragments": [{"type": "RESPONSE", "content": "第二"}]}},
+        }
+        result = d2u.convert_conversation(make_conv(mapping), True, lambda m: None, empty_stats())
+        current = result["mapping"][result["current_node"]]
+        self.assertEqual(current["message"]["content"]["parts"], ["第二"])
+
     def test_think_can_be_dropped(self):
         mapping = {
             "root": make_node("root", None, ["a"]),

@@ -21,7 +21,7 @@ DeepSeek 导出虽然也是 mapping 树结构，但消息内容存放在 message
 本脚本完成 / What it does:
     1. fragments[] -> author.role + content.parts[]
     2. 短节点 ID -> 确定性 UUID v4（幂等，重复运行输出完全一致）
-    3. 推断 current_node（最后一个叶子节点）
+    3. 推断 current_node（create_time 最新的叶子节点）
     4. ISO 8601 时间戳 -> Unix 浮点数
     5. 补充 ChatGPT 所需空字段
 
@@ -330,9 +330,11 @@ def extract_parts(
 
 
 def find_current_node(mapping: dict[str, dict], root_uid: str) -> str:
-    """从 root 出发 DFS，返回最后一个叶子节点（无 children 的节点）。"""
-    last_leaf = root_uid
-    found = False
+    """返回 create_time 最大的叶子节点；时间相同或全部缺失时取遍历顺序靠后的。"""
+    best_uid = root_uid
+    best_time = float("-inf")
+    best_order = -1
+    order = 0
 
     stack = [root_uid]
     while stack:
@@ -340,14 +342,21 @@ def find_current_node(mapping: dict[str, dict], root_uid: str) -> str:
         node = mapping.get(uid)
         if node is None:
             continue
+        order += 1
         children = node.get("children", [])
         if children:
             stack.extend(reversed(children))
-        else:
-            last_leaf = uid
-            found = True
+            continue
 
-    return last_leaf if found else root_uid
+        msg = node.get("message")
+        ts = msg.get("create_time") if isinstance(msg, dict) else None
+        ts = float(ts) if isinstance(ts, (int, float)) else float("-inf")
+        if ts > best_time or (ts == best_time and order > best_order):
+            best_uid = uid
+            best_time = ts
+            best_order = order
+
+    return best_uid
 
 
 # ---------------------------------------------------------------------------

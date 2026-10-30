@@ -165,7 +165,6 @@ Conclusion: ucs-parser's `corrections` concept is structurally scarce in a Chine
 - `language_preferences` is hardcoded to `"en"` by ucs-parser, with no Chinese detection
 - The converter covers the eight observed DeepSeek fragment types; new types will need extension
 - Tool-only fragments carry no message body. `SEARCH` and `TOOL_SEARCH` results are dropped by default; `--keep-tool-fragments` keeps their titles and URLs, while `TOOL_OPEN` and `TOOL_FIND` have nothing to keep
-- `current_node` is inferred from the last leaf in child order; a conversation with several branches may point at an earlier branch than the newest reply
 
 ## License
 

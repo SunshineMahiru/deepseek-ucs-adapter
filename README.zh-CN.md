@@ -165,7 +165,6 @@ python -m unittest discover -s tests -v
 - `language_preferences` 被 ucs-parser 硬编码为 `"en"`，不支持中文检测
 - 转换脚本覆盖八种实测 DeepSeek fragment 类型；若 DeepSeek 未来新增类型，需相应扩展
 - 纯工具类片段没有正文。`SEARCH` 与 `TOOL_SEARCH` 的结果默认丢弃，加 `--keep-tool-fragments` 可保留标题与链接；`TOOL_OPEN` 与 `TOOL_FIND` 没有可保留的内容
-- `current_node` 按子节点顺序取最后一个叶子；存在多条分支的会话可能指向比最新回复更早的分支
 
 ## 许可证
 
