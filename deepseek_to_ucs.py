@@ -319,7 +319,7 @@ def convert_conversation(
             warn(t("warn_msg_not_dict", id=nid))
             continue
         frags = msg.get("fragments") or []
-        types = [f.get("type") for f in frags if isinstance(f, dict)]
+        types = {str(f.get("type") or "").upper() for f in frags if isinstance(f, dict)}
         role = "user" if "REQUEST" in types else "assistant"
         parts = extract_parts(frags, merge_think, warn, stats)
         role_parts[nid] = (role, parts)
