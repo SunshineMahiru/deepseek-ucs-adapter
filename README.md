@@ -109,6 +109,20 @@ The Fidelity report prints per-dimension scores (Persona, Interaction patterns, 
 
 See `examples/sample_profile.json` for a sanitized output sample (domain names replaced with `Domain A–J`, dates fuzzed). The real profile is not committed because it contains personal domains and timestamps.
 
+## Container
+
+The same wheel is published as an OCI image:
+
+```bash
+docker pull ghcr.io/sunshinemahiru/deepseek-ucs-adapter:0.1.0
+
+docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:/work" \
+  ghcr.io/sunshinemahiru/deepseek-ucs-adapter:0.1.0 \
+  conversations.json conversations_chatgpt.json
+```
+
+The image runs as an unprivileged user. `--user` is only needed on Linux to keep the output file owned by your host account; omit it on Docker Desktop.
+
 ## Getting your data
 
 DeepSeek web app → **Settings** → **Data management** → **Export all conversations** → unzip to get `conversations.json`.

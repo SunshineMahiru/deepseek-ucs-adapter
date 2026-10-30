@@ -109,6 +109,20 @@ Fidelity 报告会打印各维度分数（Persona、Interaction patterns 等）�
 
 脱敏输出示例见 `examples/sample_profile.json`（领域名替换为 `Domain A–J`，日期模糊化）。真实画像因含个人领域与时间信息，不入库。
 
+## 容器
+
+同一个 wheel 也以 OCI 镜像发布：
+
+```bash
+docker pull ghcr.io/sunshinemahiru/deepseek-ucs-adapter:0.1.0
+
+docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:/work" \
+  ghcr.io/sunshinemahiru/deepseek-ucs-adapter:0.1.0 \
+  conversations.json conversations_chatgpt.json
+```
+
+镜像以非特权用户运行。`--user` 只在 Linux 下用于让输出文件保持宿主账号的属主，Docker Desktop 可以省略。
+
 ## 数据获取
 
 DeepSeek 网页版 → **系统设置** → **数据管理** → **导出所有历史对话** → 解压得到 `conversations.json`。

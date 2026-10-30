@@ -19,8 +19,14 @@ COPY dist/*.whl /tmp/wheels/
 RUN python -m pip install --no-cache-dir --no-compile --disable-pip-version-check /tmp/wheels/*.whl \
  && rm -rf /tmp/wheels
 
-# Mount the directory holding conversations.json here; the CLI resolves
-# input/output paths relative to the working directory.
+# Run as an unprivileged user. The work directory stays writable so a bind
+# mount can receive the converted file; pass --user "$(id -u):$(id -g)" on
+# Linux to keep output ownership identical to the host account.
+RUN useradd --create-home --uid 10001 app \
+ && mkdir -p /work \
+ && chown app:app /work
+
 WORKDIR /work
+USER app
 
 ENTRYPOINT ["deepseek-ucs"]
