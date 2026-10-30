@@ -37,7 +37,8 @@ DeepSeek 导出虽然也是 mapping 树结构，但消息内容存放在 message
   其余工具类(TOOL_*/SEARCH)->丢弃（它们无文本，且 SEARCH.results 是
   Python repr 字符串）。
 
-依赖 / Dependencies: 仅标准库（json / uuid / datetime / sys / argparse / hashlib / re）。
+依赖 / Dependencies: 仅标准库（json / uuid / datetime / sys / argparse /
+hashlib / unicodedata / os / pathlib）。
 
 用法 / Usage:
     python deepseek_to_ucs.py <input.json> <output.json>
@@ -489,7 +490,7 @@ def main(argv: Optional[list[str]] = None) -> int:
     set_lang(_preparse_lang(raw_argv))
 
     ap = argparse.ArgumentParser(
-        prog="deepseek_to_ucs",
+        prog="deepseek-ucs",
         description=t("prog_desc"),
     )
     ap.add_argument("input", help=t("arg_input"))
