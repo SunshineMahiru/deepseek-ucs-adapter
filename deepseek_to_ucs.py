@@ -89,6 +89,9 @@ MSG: dict[str, dict[str, str]] = {
     "warn_conv_no_mapping": {"zh": "会话 '{title}' (id={id}) 缺少 mapping，跳过", "en": "conversation '{title}' (id={id}) missing mapping, skipped"},
     "warn_conv_no_root": {"zh": "会话 '{title}' (id={id}) 无 root 节点，跳过", "en": "conversation '{title}' (id={id}) has no root node, skipped"},
     "warn_conv_not_dict": {"zh": "第 {i} 个会话不是 dict，跳过", "en": "conversation #{i} is not a dict, skipped"},
+    "warn_conv_root_not_dict": {"zh": "会话 '{title}' (id={id}) 的 root 节点不是 dict，跳过", "en": "conversation '{title}' (id={id}) has a non-dict root node, skipped"},
+    "warn_node_not_dict": {"zh": "节点 {id} 不是 dict，跳过", "en": "node {id} is not a dict, skipped"},
+    "warn_msg_not_dict": {"zh": "节点 {id} 的 message 不是 dict，跳过", "en": "message of node {id} is not a dict, skipped"},
 
     # 错误
     "err_read_input": {"zh": "错误：无法读取输入文件：{e}", "en": "Error: cannot read input file: {e}"},
@@ -284,18 +287,30 @@ def convert_conversation(
         stats["skipped_conversations"] += 1
         return None
     root_id = root_ids[0]
+    if not isinstance(raw.get(root_id), dict):
+        warn(t("warn_conv_root_not_dict", title=title, id=conv_id))
+        stats["skipped_conversations"] += 1
+        return None
 
     # ---- 第一遍：分类 kept/skipped，提取 role + parts ----
     kept: dict[str, bool] = {}
     role_parts: dict[str, tuple[Optional[str], Optional[list]]] = {}
     for nid, node in raw.items():
         if not isinstance(node, dict):
+            kept[nid] = False
+            stats["skipped_nodes"] += 1
+            warn(t("warn_node_not_dict", id=nid))
             continue
         msg = node.get("message")
         if msg is None:
             # root 节点或占位节点：保留，message 为 null
             kept[nid] = True
             role_parts[nid] = (None, None)
+            continue
+        if not isinstance(msg, dict):
+            kept[nid] = False
+            stats["skipped_nodes"] += 1
+            warn(t("warn_msg_not_dict", id=nid))
             continue
         frags = msg.get("fragments") or []
         types = [f.get("type") for f in frags if isinstance(f, dict)]
