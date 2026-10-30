@@ -102,6 +102,7 @@ MSG: dict[str, dict[str, str]] = {
     "err_read_input": {"zh": "错误：无法读取输入文件：{e}", "en": "Error: cannot read input file: {e}"},
     "err_write_log": {"zh": "错误：无法写入日志文件：{e}", "en": "Error: cannot write log file: {e}"},
     "err_write_output": {"zh": "错误：无法写入输出文件：{e}", "en": "Error: cannot write output file: {e}"},
+    "err_bad_limit": {"zh": "错误：--limit 必须是正整数，收到 {n}", "en": "Error: --limit must be a positive integer, got {n}"},
     "warn_top_not_array": {"zh": "警告：输入顶层不是数组（{t}），已包装为单元素数组", "en": "Warning: top-level input is not an array ({t}), wrapped as a single-element array"},
 
     # 进度 / verbose
@@ -111,6 +112,7 @@ MSG: dict[str, dict[str, str]] = {
     # 统计
     "stats_title": {"zh": "转换统计", "en": "Conversion statistics"},
     "stats_total": {"zh": "总会话数", "en": "Total conversations"},
+    "stats_processed": {"zh": "本次处理会话数", "en": "Processed in this run"},
     "stats_success": {"zh": "成功转换会话数", "en": "Successfully converted"},
     "stats_skipped_conv": {"zh": "跳过的会话数", "en": "Skipped conversations"},
     "stats_msg_nodes": {"zh": "总消息节点数(不含root)", "en": "Message nodes (excl. root)"},
@@ -504,7 +506,11 @@ def main(argv: Optional[list[str]] = None) -> int:
         print(t("warn_top_not_array", t=type(data).__name__), file=sys.stderr)
         data = [data]
 
+    source_total = len(data)
     if args.limit is not None:
+        if args.limit <= 0:
+            print(t("err_bad_limit", n=args.limit), file=sys.stderr)
+            return 2
         data = data[: args.limit]
 
     total = len(data)
@@ -548,14 +554,16 @@ def main(argv: Optional[list[str]] = None) -> int:
     print("\n" + "=" * 60)
     print(t("stats_title"))
     print("=" * 60)
-    rows = [
-        (t("stats_total"), str(total)),
+    rows = [(t("stats_total"), str(source_total))]
+    if total != source_total:
+        rows.append((t("stats_processed"), str(total)))
+    rows.extend([
         (t("stats_success"), str(len(out))),
         (t("stats_skipped_conv"), str(stats["skipped_conversations"])),
         (t("stats_msg_nodes"), str(stats["message_nodes"])),
         (t("stats_skipped_nodes"), str(stats["skipped_nodes"])),
         (t("stats_skipped_frags"), str(stats["skipped_fragments"])),
-    ]
+    ])
     width = max(display_width(label) for label, _ in rows) + 2
     for label, value in rows:
         pad = " " * (width - display_width(label))
