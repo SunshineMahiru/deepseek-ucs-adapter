@@ -53,7 +53,7 @@ import hashlib
 import json
 import sys
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Callable, Optional
 
 
@@ -155,14 +155,24 @@ def deterministic_uuid4(seed: str) -> str:
     return str(uuid.UUID(bytes=bytes(b)))
 
 
-def to_unix(iso: Any) -> float:
-    """把 ISO 8601 字符串转成 Unix 浮点时间戳，解析失败返回 0.0。"""
+def to_unix(iso: Any) -> Optional[float]:
+    """把 ISO 8601 字符串转成 Unix 浮点时间戳，缺失或无法解析时返回 None。
+
+    不带时区的时间按 UTC 解释，保证同一份导出在不同机器上得到相同的值。
+    Python 3.10 的 fromisoformat 不接受结尾的 Z，这里先改写为 +00:00。
+    """
     if not iso:
-        return 0.0
+        return None
+    text = str(iso).strip()
+    if text[-1:] in ("Z", "z"):
+        text = text[:-1] + "+00:00"
     try:
-        return datetime.fromisoformat(str(iso)).timestamp()
+        parsed = datetime.fromisoformat(text)
     except (ValueError, TypeError):
-        return 0.0
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.timestamp()
 
 
 def extract_parts(
