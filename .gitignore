@@ -10,6 +10,9 @@ conversations*.json
 *.backup
 *.experiment-backup
 
+# 测试临时目录
+.test-tmp/
+
 # Python 缓存
 __pycache__/
 *.pyc
