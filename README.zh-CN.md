@@ -91,6 +91,7 @@ python -c "from ucs_parser import Parser; r = Parser(source='chatgpt').from_file
 | `--dry-run` | 只解析和统计，不写文件 |
 | `--limit N` | 只转换前 N 个会话；N 必须是正整数 |
 | `--merge-think` / `--no-merge-think` | 保留或丢弃 THINK 推理片段（默认保留） |
+| `--keep-tool-fragments` | 把 SEARCH / TOOL_SEARCH 的搜索结果写成 `[工具] 标题 — 链接` 行（默认关闭） |
 | `--lang zh\|en` | 切换工具自身的提示与统计（默认 zh） |
 
 退出码：
@@ -163,7 +164,7 @@ python -m unittest discover -s tests -v
 - Interaction patterns 对中文数据有结构性上限（实测 0.41），因显式纠正信号稀缺
 - `language_preferences` 被 ucs-parser 硬编码为 `"en"`，不支持中文检测
 - 转换脚本覆盖八种实测 DeepSeek fragment 类型；若 DeepSeek 未来新增类型，需相应扩展
-- 纯工具类片段（`TOOL_OPEN`、`TOOL_SEARCH`、`TOOL_FIND`、`SEARCH`）没有文本，会被丢弃，搜索结果与工具调用轨迹不进入输出
+- 纯工具类片段没有正文。`SEARCH` 与 `TOOL_SEARCH` 的结果默认丢弃，加 `--keep-tool-fragments` 可保留标题与链接；`TOOL_OPEN` 与 `TOOL_FIND` 没有可保留的内容
 - `current_node` 按子节点顺序取最后一个叶子；存在多条分支的会话可能指向比最新回复更早的分支
 
 ## 许可证

@@ -91,6 +91,7 @@ Running from a clone without installing works too: `python deepseek_to_ucs.py co
 | `--dry-run` | Parse and report without writing files |
 | `--limit N` | Convert only the first N conversations; N must be a positive integer |
 | `--merge-think` / `--no-merge-think` | Keep or drop THINK reasoning fragments (default: keep) |
+| `--keep-tool-fragments` | Write SEARCH / TOOL_SEARCH results as `[TOOL] title — url` lines (default: off) |
 | `--lang zh\|en` | Switch the tool's own messages and statistics (default: zh) |
 
 Exit codes:
@@ -163,7 +164,7 @@ Conclusion: ucs-parser's `corrections` concept is structurally scarce in a Chine
 - Interaction patterns has a structural ceiling for Chinese data (measured 0.41), due to scarce explicit correction signals
 - `language_preferences` is hardcoded to `"en"` by ucs-parser, with no Chinese detection
 - The converter covers the eight observed DeepSeek fragment types; new types will need extension
-- Tool-only fragments (`TOOL_OPEN`, `TOOL_SEARCH`, `TOOL_FIND`, `SEARCH`) carry no text and are dropped, so search results and tool-call traces do not reach the output
+- Tool-only fragments carry no message body. `SEARCH` and `TOOL_SEARCH` results are dropped by default; `--keep-tool-fragments` keeps their titles and URLs, while `TOOL_OPEN` and `TOOL_FIND` have nothing to keep
 - `current_node` is inferred from the last leaf in child order; a conversation with several branches may point at an earlier branch than the newest reply
 
 ## License

@@ -205,6 +205,60 @@ class ConvertTest(unittest.TestCase):
         self.assertEqual(stats["frag_tool"], 1)
         self.assertEqual(stats["frag_unknown"], 1)
 
+    def test_tool_results_are_dropped_by_default(self):
+        mapping = {
+            "root": make_node("root", None, ["a"]),
+            "a": make_node("a", "root", [], [
+                {"type": "TOOL_SEARCH", "results": "[{'title': '示例', 'url': 'https://example.com'}]"},
+                {"type": "RESPONSE", "content": "回答"},
+            ]),
+        }
+        result = d2u.convert_conversation(make_conv(mapping), True, lambda m: None, empty_stats())
+        parts = [n["message"]["content"]["parts"] for n in result["mapping"].values() if n["message"]][0]
+        self.assertEqual(parts, ["回答"])
+
+    def test_tool_results_can_be_kept(self):
+        mapping = {
+            "root": make_node("root", None, ["a"]),
+            "a": make_node("a", "root", [], [
+                {"type": "TOOL_SEARCH", "results": "[{'title': '示例', 'url': 'https://example.com'}]"},
+                {"type": "RESPONSE", "content": "回答"},
+            ]),
+        }
+        stats = empty_stats()
+        result = d2u.convert_conversation(make_conv(mapping), True, lambda m: None, stats, True)
+        parts = [n["message"]["content"]["parts"] for n in result["mapping"].values() if n["message"]][0]
+        self.assertIn("[工具] 示例 — https://example.com", parts)
+        self.assertEqual(stats["frag_tool"], 1)
+
+    def test_unparsable_tool_results_are_skipped(self):
+        mapping = {
+            "root": make_node("root", None, ["a"]),
+            "a": make_node("a", "root", [], [
+                {"type": "SEARCH", "results": "{not a literal"},
+                {"type": "RESPONSE", "content": "回答"},
+            ]),
+        }
+        stats = empty_stats()
+        warnings = []
+        result = d2u.convert_conversation(make_conv(mapping), True, warnings.append, stats, True)
+        parts = [n["message"]["content"]["parts"] for n in result["mapping"].values() if n["message"]][0]
+        self.assertEqual(parts, ["回答"])
+        self.assertEqual(stats["skipped_fragments"], 1)
+        self.assertEqual(len(warnings), 1)
+
+    def test_tool_results_accept_a_list(self):
+        mapping = {
+            "root": make_node("root", None, ["a"]),
+            "a": make_node("a", "root", [], [
+                {"type": "TOOL_SEARCH", "results": [{"title": "只有标题"}]},
+                {"type": "RESPONSE", "content": "回答"},
+            ]),
+        }
+        result = d2u.convert_conversation(make_conv(mapping), True, lambda m: None, empty_stats(), True)
+        parts = [n["message"]["content"]["parts"] for n in result["mapping"].values() if n["message"]][0]
+        self.assertIn("[工具] 只有标题", parts)
+
     def test_root_with_empty_parts_is_counted_once(self):
         mapping = {
             "root": make_node("root", None, [], [{"type": "TOOL_OPEN"}]),

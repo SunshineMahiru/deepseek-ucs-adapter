@@ -34,8 +34,9 @@ DeepSeek 导出虽然也是 mapping 树结构，但消息内容存放在 message
   TOOL_OPEN / TOOL_SEARCH / TOOL_FIND / SEARCH / FILE。
   处理规则：REQUEST->user、RESPONSE->assistant、THINK->assistant(加
   [REASONING] 前缀，可用 --no-merge-think 丢弃)、FILE->保留文件名、
-  其余工具类(TOOL_*/SEARCH)->丢弃（它们无文本，且 SEARCH.results 是
-  Python repr 字符串）。
+  其余工具类(TOOL_*/SEARCH)->默认丢弃（它们没有正文，SEARCH.results
+  是 Python repr 字符串）；加 --keep-tool-fragments 可把搜索结果的
+  标题与链接写成 [工具] 行。
 
 依赖 / Dependencies: 仅标准库（json / uuid / datetime / sys / argparse /
 hashlib / unicodedata / os / pathlib）。
@@ -50,6 +51,7 @@ hashlib / unicodedata / os / pathlib）。
 from __future__ import annotations
 
 import argparse
+import ast
 import hashlib
 import json
 import os
@@ -85,6 +87,10 @@ MSG: dict[str, dict[str, str]] = {
         "zh": "保留 THINK 推理片段并加 [REASONING] 前缀（默认开启）；--no-merge-think 丢弃",
         "en": "Keep THINK reasoning fragments with a [REASONING] prefix (default on); --no-merge-think drops them",
     },
+    "arg_keep_tools": {
+        "zh": "把 SEARCH / TOOL_SEARCH 的搜索结果写成 [工具] 行（默认关闭）",
+        "en": "Write SEARCH / TOOL_SEARCH results as [TOOL] lines (default off)",
+    },
     "arg_lang": {"zh": "界面语言（zh=中文，en=English）", "en": "UI language (zh=Chinese, en=English)"},
 
     # 警告（fragment / 会话）
@@ -95,6 +101,7 @@ MSG: dict[str, dict[str, str]] = {
     "warn_think_no_content": {"zh": "THINK fragment 缺少 content，跳过", "en": "THINK fragment missing content, skipped"},
     "warn_file_not_list": {"zh": "FILE fragment 的 files 不是数组，跳过", "en": "FILE fragment has a non-list files field, skipped"},
     "warn_file_no_name": {"zh": "FILE fragment 没有可用的文件名，跳过", "en": "FILE fragment has no usable file name, skipped"},
+    "warn_tool_no_results": {"zh": "工具片段的结果无法解析，跳过", "en": "tool fragment results could not be parsed, skipped"},
     "warn_conv_no_mapping": {"zh": "会话 '{title}' (id={id}) 缺少 mapping，跳过", "en": "conversation '{title}' (id={id}) missing mapping, skipped"},
     "warn_conv_no_root": {"zh": "会话 '{title}' (id={id}) 无 root 节点，跳过", "en": "conversation '{title}' (id={id}) has no root node, skipped"},
     "warn_conv_not_dict": {"zh": "第 {i} 个会话不是 dict，跳过", "en": "conversation #{i} is not a dict, skipped"},
@@ -137,6 +144,7 @@ MSG: dict[str, dict[str, str]] = {
     # 写入消息内容的标记
     "tag_reasoning": {"zh": "[REASONING] {text}", "en": "[REASONING] {text}"},
     "tag_file": {"zh": "[文件] {name}", "en": "[FILE] {name}"},
+    "tag_tool": {"zh": "[工具] {text}", "en": "[TOOL] {text}"},
 
     # 日志 / 输出
     "log_header": {"zh": "deepseek_to_ucs 转换日志", "en": "deepseek_to_ucs conversion log"},
@@ -201,11 +209,41 @@ def to_unix(iso: Any) -> Optional[float]:
     return parsed.timestamp()
 
 
+def format_tool_results(raw: Any) -> Optional[str]:
+    """把 SEARCH / TOOL_SEARCH 的 results 解析成「标题 — URL」行。
+
+    DeepSeek 导出的 results 是 Python repr 字符串，需要 literal_eval；
+    解析失败或没有可用条目时返回 None。
+    """
+    if isinstance(raw, str):
+        try:
+            raw = ast.literal_eval(raw)
+        except (ValueError, SyntaxError):
+            return None
+    if not isinstance(raw, list):
+        return None
+
+    lines: list[str] = []
+    for item in raw:
+        if not isinstance(item, dict):
+            continue
+        title = str(item.get("title") or "").strip()
+        url = str(item.get("url") or "").strip()
+        if title and url:
+            lines.append(f"{title} — {url}")
+        elif title:
+            lines.append(title)
+        elif url:
+            lines.append(url)
+    return "\n".join(lines) if lines else None
+
+
 def extract_parts(
     fragments: list,
     merge_think: bool,
     warn: Callable[[str], None],
     stats: dict[str, int],
+    keep_tools: bool = False,
 ) -> list[str]:
     """把 fragments[] 转成 content.parts[]（字符串数组），保持顺序。"""
     parts: list[str] = []
@@ -278,6 +316,13 @@ def extract_parts(
             # 已知的工具类片段与真正未知的类型分开计数
             if ftype in _TOOL_TYPES:
                 stats["frag_tool"] += 1
+                if keep_tools and ftype in ("TOOL_SEARCH", "SEARCH"):
+                    text = format_tool_results(frag.get("results"))
+                    if text:
+                        parts.append(t("tag_tool", text=text))
+                    else:
+                        stats["skipped_fragments"] += 1
+                        warn(t("warn_tool_no_results"))
             else:
                 stats["frag_unknown"] += 1
 
@@ -314,6 +359,7 @@ def convert_conversation(
     merge_think: bool,
     warn: Callable[[str], None],
     stats: dict[str, int],
+    keep_tools: bool = False,
 ) -> Optional[dict]:
     """转换单个会话，失败返回 None。"""
     conv_id = str(conv.get("id") or "")
@@ -371,7 +417,7 @@ def convert_conversation(
         frags = msg.get("fragments") or []
         types = {str(f.get("type") or "").upper() for f in frags if isinstance(f, dict)}
         role = "user" if "REQUEST" in types else "assistant"
-        parts = extract_parts(frags, merge_think, warn, stats)
+        parts = extract_parts(frags, merge_think, warn, stats, keep_tools)
         role_parts[nid] = (role, parts)
         if parts:
             kept[nid] = True
@@ -508,6 +554,7 @@ def main(argv: Optional[list[str]] = None) -> int:
         help=t("arg_merge_think"),
     )
     ap.add_argument("--lang", choices=["zh", "en"], default="zh", help=t("arg_lang"))
+    ap.add_argument("--keep-tool-fragments", action="store_true", help=t("arg_keep_tools"))
     args = ap.parse_args(raw_argv)
 
     # 以 argparse 解析结果为准
@@ -567,7 +614,9 @@ def main(argv: Optional[list[str]] = None) -> int:
             continue
 
         current_conv = str(conv.get("id") or conv.get("title") or f"#{i}")
-        result = convert_conversation(conv, args.merge_think, warn, stats)
+        result = convert_conversation(
+            conv, args.merge_think, warn, stats, args.keep_tool_fragments
+        )
         if result is not None:
             out.append(result)
 
