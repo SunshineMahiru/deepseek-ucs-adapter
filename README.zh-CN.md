@@ -20,14 +20,14 @@ DeepSeek 网页版导出的 `conversations.json` 虽然也是 `mapping` 树结�
 
 本项目做两件事：
 
-1. **格式转换** —— 把 DeepSeek 的 `fragments[]` 改写为 ChatGPT 的 `content.parts[]`，让 ucs-parser 能正确提取画像。带文本的片段保留，纯工具类片段没有文本，会被丢弃。
+1. **格式转换** —— 把 DeepSeek 的 `fragments[]` 改写为 ChatGPT 的 `content.parts[]` 与 `message.metadata`，正文不改动：请求与回复写进 parts，推理、附件与工具结果写进 metadata，每个节点保留原始 id 与 parent。
 2. **风格蒸馏** —— 基于 2856 条真实 user 消息的语言学调研，产出手工风格卡片与三种 Agent 注入模板，把画像转成可执行的 Agent 行为。
 
 ## 亮点
 
 | 亮点 | 价值 |
 |---|---|
-| fragments → parts 转换 | 把 `REQUEST`、`RESPONSE`、`THINK`、`FILE` 映射进 `content.parts[]`；纯工具类片段没有文本，直接跳过 |
+| 保真片段映射 | 请求与回复的原文原样写进 `content.parts[]`；推理、附件与工具结果写进 `metadata` |
 | 确定性 UUID v4 | 同一份导出重复运行，输出逐字节一致 |
 | 隐私优先设计 | 原始对话数据既不进入仓库，也不进入构建产物 |
 | 双语 CLI | `--lang zh\|en` 切换工具自身的提示与统计；argparse 的用法行保持英文 |
@@ -90,8 +90,10 @@ python -c "from ucs_parser import Parser; r = Parser(source='chatgpt').from_file
 | `--verbose` | 打印每个会话的转换统计 |
 | `--dry-run` | 只解析和统计，不写文件 |
 | `--limit N` | 只转换前 N 个会话；N 必须是正整数 |
-| `--merge-think` / `--no-merge-think` | 保留或丢弃 THINK 推理片段（默认保留） |
-| `--keep-tool-fragments` | 把 SEARCH / TOOL_SEARCH 的搜索结果写成 `[工具] 标题 — 链接` 行（默认关闭） |
+| `--merge-think` / `--no-merge-think` | 把 THINK 写进 `message.metadata.reasoning`，或直接丢弃（默认保留） |
+| `--legacy-tags` | 把 `[REASONING]`、`[文件]`、`[工具]` 前缀写进 parts，而不是 metadata |
+| `--keep-tool-fragments` | 配合 `--legacy-tags`，把搜索结果也写成 `[工具]` 行（默认关闭） |
+| `--flatten-empty` | 跳过没有文本的节点，并把子节点旁路到最近的保留祖先 |
 | `--lang zh\|en` | 切换工具自身的提示与统计（默认 zh） |
 
 退出码：
@@ -103,6 +105,12 @@ python -c "from ucs_parser import Parser; r = Parser(source='chatgpt').from_file
 | `3` | 所有会话都被跳过，输出为空数组 |
 
 脱敏输出示例见 `examples/sample_profile.json`（领域名替换为 `Domain A–J`，日期模糊化）。真实画像因含个人领域与时间信息，不入库。
+
+## 输出结构
+
+每个会话保留 ChatGPT 的 `id`、`title`、`create_time`、`update_time`、`mapping`、`current_node`、`conversation_id`、`moderation_results`、`is_archived`、`safe_urls` 与 `plugin_ids`。每条消息包含 `id`、`author`、`content`、`create_time`、`update_time`、`end_turn`、`metadata`、`recipient` 与 `status`。
+
+`metadata` 记录 `original_id`、`original_parent` 与 `model`；源节点含对应片段时，还带 `reasoning`、`attachments`、`tool_results`、`tool_calls` 或 `unparsed_tools`。父子 id 双向一致，`current_node` 始终指向叶子。
 
 ## 容器
 
@@ -164,7 +172,7 @@ python -m unittest discover -s tests -v
 - Interaction patterns 对中文数据有结构性上限（实测 0.41），因显式纠正信号稀缺
 - `language_preferences` 被 ucs-parser 硬编码为 `"en"`，不支持中文检测
 - 转换脚本覆盖八种实测 DeepSeek fragment 类型；若 DeepSeek 未来新增类型，需相应扩展
-- 纯工具类片段没有正文。`SEARCH` 与 `TOOL_SEARCH` 的结果默认丢弃，加 `--keep-tool-fragments` 可保留标题与链接；`TOOL_OPEN` 与 `TOOL_FIND` 没有可保留的内容
+- 纯工具类片段没有正文。`SEARCH` 与 `TOOL_SEARCH` 的结果写进 `metadata.tool_results`，`TOOL_OPEN` 与 `TOOL_FIND` 记入 `metadata.tool_calls`，都不向 `parts` 添加文本
 
 ## 许可证
 

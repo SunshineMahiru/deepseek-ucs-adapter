@@ -20,14 +20,14 @@ DeepSeek's web export (`conversations.json`) is a `mapping` tree, but message co
 
 This project does two things:
 
-1. **Format conversion** — rewrite DeepSeek `fragments[]` into ChatGPT `content.parts[]` so ucs-parser can extract a real profile. Text-bearing fragments are preserved; tool-only fragments carry no text and are dropped.
+1. **Format conversion** — rewrite DeepSeek `fragments[]` into ChatGPT `content.parts[]` and `message.metadata` without altering the text: request and reply bodies go into parts, while reasoning, attachments and tool results go into metadata, and every node keeps its original id and parent.
 2. **Style distillation** — from a linguistic study of 2,856 real user messages, ship a hand-written style card plus three Agent injection templates that turn the profile into concrete Agent behaviour.
 
 ## Highlights
 
 | Highlight | Why it matters |
 |---|---|
-| Fragments → parts conversion | Maps `REQUEST`, `RESPONSE`, `THINK` and `FILE` into `content.parts[]`; tool-only types carry no text and are skipped |
+| Faithful fragment mapping | Request and reply text goes into `content.parts[]` unchanged; reasoning, attachments and tool results go into `metadata` |
 | Deterministic UUID v4 | Re-running the same export produces byte-identical output |
 | Privacy-first design | Raw conversation data is excluded from the repository and from the built artefacts |
 | Bilingual CLI | `--lang zh|en` switches the tool's own messages and statistics; argparse usage lines stay in English |
@@ -90,8 +90,10 @@ Running from a clone without installing works too: `python deepseek_to_ucs.py co
 | `--verbose` | Print per-conversation statistics |
 | `--dry-run` | Parse and report without writing files |
 | `--limit N` | Convert only the first N conversations; N must be a positive integer |
-| `--merge-think` / `--no-merge-think` | Keep or drop THINK reasoning fragments (default: keep) |
-| `--keep-tool-fragments` | Write SEARCH / TOOL_SEARCH results as `[TOOL] title — url` lines (default: off) |
+| `--merge-think` / `--no-merge-think` | Keep THINK in `message.metadata.reasoning`, or drop it (default: keep) |
+| `--legacy-tags` | Write `[REASONING]`, `[FILE]` and `[TOOL]` prefixes into parts instead of metadata |
+| `--keep-tool-fragments` | With `--legacy-tags`, also write SEARCH results as `[TOOL]` lines (default: off) |
+| `--flatten-empty` | Skip nodes without text and reattach their children to the nearest kept ancestor |
 | `--lang zh\|en` | Switch the tool's own messages and statistics (default: zh) |
 
 Exit codes:
@@ -103,6 +105,12 @@ Exit codes:
 | `3` | Every conversation was skipped and the output array is empty |
 
 See `examples/sample_profile.json` for a sanitized output sample (domain names replaced with `Domain A–J`, dates fuzzed). The real profile is not committed because it contains personal domains and timestamps.
+
+## Output shape
+
+Every conversation keeps the ChatGPT fields `id`, `title`, `create_time`, `update_time`, `mapping`, `current_node`, `conversation_id`, `moderation_results`, `is_archived`, `safe_urls` and `plugin_ids`. Every message carries `id`, `author`, `content`, `create_time`, `update_time`, `end_turn`, `metadata`, `recipient` and `status`.
+
+`metadata` carries `original_id`, `original_parent` and `model`, plus `reasoning`, `attachments`, `tool_results`, `tool_calls` or `unparsed_tools` when the source node has those fragments. Parent and child ids stay consistent in both directions, and `current_node` always points at a leaf.
 
 ## Container
 
@@ -164,7 +172,7 @@ Conclusion: ucs-parser's `corrections` concept is structurally scarce in a Chine
 - Interaction patterns has a structural ceiling for Chinese data (measured 0.41), due to scarce explicit correction signals
 - `language_preferences` is hardcoded to `"en"` by ucs-parser, with no Chinese detection
 - The converter covers the eight observed DeepSeek fragment types; new types will need extension
-- Tool-only fragments carry no message body. `SEARCH` and `TOOL_SEARCH` results are dropped by default; `--keep-tool-fragments` keeps their titles and URLs, while `TOOL_OPEN` and `TOOL_FIND` have nothing to keep
+- Tool-only fragments carry no message body. `SEARCH` and `TOOL_SEARCH` results go into `metadata.tool_results`; `TOOL_OPEN` and `TOOL_FIND` are recorded in `metadata.tool_calls`, so neither adds text to `parts`
 
 ## License
 
