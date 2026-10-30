@@ -3,12 +3,12 @@
 > 三个可直接使用的模板，把 `风格卡片.md` 里手工提取的用户交互模式，注入到不同 Agent 运行时。内容一致，仅按目标平台的格式改写。
 > Three ready-to-use templates that inject the hand-extracted interaction patterns from `风格卡片.md` into different Agent runtimes. Same content, reformatted per target platform.
 
-## 4.1 Hermes SOUL.md 片段 / Snippet
+## 1. Hermes SOUL.md 片段 / Snippet
 
 中文 / Chinese:
 
 ```markdown
-# 用户交互模式（从 2856 条 DeepSeek 对话蒸馏）
+# 用户交互模式（从 2856 条 DeepSeek 用户消息蒸馏）
 ## 沟通风格
 - 分析型协作：用户粘贴文本/代码后请求分析，直接进入分析，不追问
 - 格式偏好：默认输出干净、非 markdown、少符号
@@ -31,7 +31,7 @@ English:
 - Explicit redo: "重新回答" is the highest-priority correction signal
 ```
 
-## 4.2 Claude Code / Cursor 系统提示词片段 / System prompt snippet
+## 2. Claude Code / Cursor 系统提示词片段 / System prompt snippet
 
 中文 / Chinese:
 
@@ -55,7 +55,7 @@ You are talking to an analytical-collaboration user. Follow this style:
 - Default to clean, non-markdown output with minimal symbols
 ```
 
-## 4.3 DSH Profile 片段 / Snippet
+## 3. DSH Profile 片段 / Snippet
 
 ```yaml
 user_interaction_patterns:
