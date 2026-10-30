@@ -52,6 +52,7 @@ import argparse
 import hashlib
 import json
 import sys
+import unicodedata
 import uuid
 from datetime import datetime, timezone
 from typing import Any, Callable, Optional
@@ -142,6 +143,11 @@ def t(key: str, **kwargs: Any) -> str:
     """返回当前语言下的消息文案，并应用格式化参数。"""
     fmt = MSG.get(key, {}).get(_LANG, key)
     return fmt.format(**kwargs) if kwargs else fmt
+
+
+def display_width(text: str) -> int:
+    """按终端显示列数计算宽度：全角与宽字符占两列。"""
+    return sum(2 if unicodedata.east_asian_width(ch) in ("W", "F") else 1 for ch in text)
 
 
 # ---------------------------------------------------------------------------
@@ -546,9 +552,10 @@ def main(argv: Optional[list[str]] = None) -> int:
         (t("stats_skipped_nodes"), str(stats["skipped_nodes"])),
         (t("stats_skipped_frags"), str(stats["skipped_fragments"])),
     ]
-    width = max(len(label) for label, _ in rows) + 2
+    width = max(display_width(label) for label, _ in rows) + 2
     for label, value in rows:
-        print(f"  {label:<{width}}: {value}")
+        pad = " " * (width - display_width(label))
+        print(f"  {label}{pad}: {value}")
     print("  " + t("stats_frag_title") + ":")
     frag_rows = [
         (t("stats_frag_request"), stats["frag_REQUEST"]),
@@ -558,9 +565,10 @@ def main(argv: Optional[list[str]] = None) -> int:
         (t("stats_frag_file"), stats["frag_FILE"]),
         (t("stats_frag_unknown"), stats["frag_unknown"]),
     ]
-    fwidth = max(len(label) for label, _ in frag_rows) + 2
+    fwidth = max(display_width(label) for label, _ in frag_rows) + 2
     for label, value in frag_rows:
-        print(f"    {label:<{fwidth}}: {value}")
+        pad = " " * (fwidth - display_width(label))
+        print(f"    {label}{pad}: {value}")
     print(f"  {t('stats_warnings')}: {len(warnings)}")
 
     # ---- 写日志 ----
