@@ -73,10 +73,9 @@
     "output_format": "structured",
     "response_length": "moderate",
     "code_language_preferences": [
-      "Domain C",
-      "Domain D",
-      "Domain F",
-      "Domain H"
+      "Python",
+      "C",
+      "JavaScript"
     ],
     "custom": {}
   },
@@ -96,10 +95,10 @@
     "recency_weight": 0.7,
     "life_chapters": [
       {
-        "label": "AI usage period (2026-XX – present)",
-        "from": "2026-XX-XX",
+        "label": "AI usage period (2026-06 – present)",
+        "from": "2026-06-01",
         "active": true,
-        "notes": "Inferred from user messages across multiple conversation(s) spanning 2026-XX to present."
+        "notes": "Inferred from user messages across multiple conversation(s) spanning 2026-06 to present."
       }
     ]
   },
