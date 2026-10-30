@@ -497,7 +497,7 @@ def main(argv: Optional[list[str]] = None) -> int:
 
     # 读取输入
     try:
-        with open(args.input, encoding="utf-8") as f:
+        with open(args.input, encoding="utf-8-sig") as f:
             data = json.load(f)
     except (OSError, json.JSONDecodeError) as e:
         print(t("err_read_input", e=e), file=sys.stderr)
