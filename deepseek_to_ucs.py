@@ -349,7 +349,9 @@ def convert_conversation(
             stats["skipped_nodes"] += 1
 
     # root 强制保留（防御性：即使 root 的 message 意外非 null 且无文本）
-    kept[root_id] = True
+    if not kept.get(root_id):
+        kept[root_id] = True
+        stats["skipped_nodes"] -= 1
 
     # ---- 第二遍：旁路重挂（把被跳过节点的子节点挂到其父节点） ----
     def eff_children(nid: str) -> list[str]:
