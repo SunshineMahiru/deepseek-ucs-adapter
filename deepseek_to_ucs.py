@@ -140,6 +140,7 @@ MSG: dict[str, dict[str, str]] = {
     "log_warn_count": {"zh": "警告/跳过 {n} 条", "en": "Warnings/skips: {n}"},
     "log_written": {"zh": "日志已写入: {path}", "en": "Log written to: {path}"},
     "dryrun_no_log": {"zh": "[dry-run] 跳过 {n} 条，未写日志", "en": "[dry-run] {n} item(s) skipped, no log written"},
+    "warn_more": {"zh": "…另有 {n} 条未显示", "en": "... {n} more not shown"},
     "dryrun_no_output": {"zh": "[dry-run] 未写入输出文件", "en": "[dry-run] output file not written"},
     "output_written": {"zh": "输出已写入: {path}", "en": "Output written to: {path}"},
 }
@@ -537,17 +538,21 @@ def main(argv: Optional[list[str]] = None) -> int:
         "frag_unknown": 0,
     }
     warnings: list[str] = []
+    current_conv = ""
 
     def warn(msg: str) -> None:
-        warnings.append(msg)
+        prefix = f"[{current_conv}] " if current_conv else ""
+        warnings.append(prefix + msg)
 
     out: list[dict] = []
     for i, conv in enumerate(data, start=1):
         if not isinstance(conv, dict):
+            current_conv = f"#{i}"
             warn(t("warn_conv_not_dict", i=i))
             stats["skipped_conversations"] += 1
             continue
 
+        current_conv = str(conv.get("id") or conv.get("title") or f"#{i}")
         result = convert_conversation(conv, args.merge_think, warn, stats)
         if result is not None:
             out.append(result)
@@ -612,6 +617,10 @@ def main(argv: Optional[list[str]] = None) -> int:
     else:
         if warnings:
             print(t("dryrun_no_log", n=len(warnings)))
+            for w in warnings[:20]:
+                print("  " + w)
+            if len(warnings) > 20:
+                print("  " + t("warn_more", n=len(warnings) - 20))
 
     # ---- 写输出 ----
     if args.dry_run:
