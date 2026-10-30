@@ -241,21 +241,23 @@ def extract_parts(
 
 def find_current_node(mapping: dict[str, dict], root_uid: str) -> str:
     """从 root 出发 DFS，返回最后一个叶子节点（无 children 的节点）。"""
-    leaves: list[str] = []
+    last_leaf = root_uid
+    found = False
 
-    def dfs(uid: str) -> None:
+    stack = [root_uid]
+    while stack:
+        uid = stack.pop()
         node = mapping.get(uid)
         if node is None:
-            return
+            continue
         children = node.get("children", [])
-        if not children:
-            leaves.append(uid)
+        if children:
+            stack.extend(reversed(children))
         else:
-            for c in children:
-                dfs(c)
+            last_leaf = uid
+            found = True
 
-    dfs(root_uid)
-    return leaves[-1] if leaves else root_uid
+    return last_leaf if found else root_uid
 
 
 # ---------------------------------------------------------------------------
@@ -332,19 +334,24 @@ def convert_conversation(
     kept[root_id] = True
 
     # ---- 第二遍：旁路重挂（把被跳过节点的子节点挂到其父节点） ----
-    def eff_children(nid: str, seen: set[str]) -> list[str]:
+    def eff_children(nid: str) -> list[str]:
         out: list[str] = []
         node = raw.get(nid)
         if not isinstance(node, dict):
             return out
-        for c in node.get("children", []) or []:
+        seen = {nid}
+        stack = list(reversed(node.get("children", []) or []))
+        while stack:
+            c = stack.pop()
             if c not in raw or c in seen:
                 continue
+            seen.add(c)
             if kept.get(c):
                 out.append(c)
-            else:
-                seen.add(c)
-                out.extend(eff_children(c, seen))
+                continue
+            child_node = raw.get(c)
+            kids = child_node.get("children", []) if isinstance(child_node, dict) else []
+            stack.extend(reversed(kids or []))
         return out
 
     def eff_parent(nid: str) -> Optional[str]:
@@ -380,7 +387,7 @@ def convert_conversation(
                 "id": uid,
                 "message": None,
                 "parent": None,
-                "children": [id_map[c] for c in eff_children(nid, {nid})],
+                "children": [id_map[c] for c in eff_children(nid)],
             }
         else:
             parent_nid = eff_parent(nid)
@@ -397,7 +404,7 @@ def convert_conversation(
                     "metadata": {},
                 },
                 "parent": id_map[parent_nid] if parent_nid is not None else None,
-                "children": [id_map[c] for c in eff_children(nid, {nid})],
+                "children": [id_map[c] for c in eff_children(nid)],
             }
             stats["message_nodes"] += 1
 
