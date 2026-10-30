@@ -66,6 +66,9 @@ from typing import Any, Callable, Optional
 
 _LANG: str = "zh"
 
+# 已知但没有任何文本内容的工具类片段，与真正未知的类型分开统计
+_TOOL_TYPES = {"TOOL_OPEN", "TOOL_SEARCH", "TOOL_FIND", "SEARCH"}
+
 MSG: dict[str, dict[str, str]] = {
     # argparse 帮助文案
     "prog_desc": {
@@ -126,7 +129,8 @@ MSG: dict[str, dict[str, str]] = {
     "stats_frag_think_kept": {"zh": "THINK(保留)", "en": "THINK (kept)"},
     "stats_frag_think_dropped": {"zh": "THINK(丢弃)", "en": "THINK (dropped)"},
     "stats_frag_file": {"zh": "FILE(文件名)", "en": "FILE (filenames)"},
-    "stats_frag_unknown": {"zh": "unknown/工具类", "en": "unknown/tool"},
+    "stats_frag_tool": {"zh": "工具类片段", "en": "tool fragments"},
+    "stats_frag_unknown": {"zh": "未识别类型", "en": "unrecognised types"},
     "stats_warnings": {"zh": "警告/跳过记录", "en": "Warnings/skips"},
 
     # 写入消息内容的标记
@@ -270,8 +274,11 @@ def extract_parts(
                 warn(t("warn_file_no_name"))
 
         else:
-            # TOOL_OPEN / TOOL_SEARCH / TOOL_FIND / SEARCH 及其他未知类型 -> 丢弃
-            stats["frag_unknown"] += 1
+            # 已知的工具类片段与真正未知的类型分开计数
+            if ftype in _TOOL_TYPES:
+                stats["frag_tool"] += 1
+            else:
+                stats["frag_unknown"] += 1
 
     return parts
 
@@ -535,6 +542,7 @@ def main(argv: Optional[list[str]] = None) -> int:
         "frag_THINK": 0,
         "frag_THINK_dropped": 0,
         "frag_FILE": 0,
+        "frag_tool": 0,
         "frag_unknown": 0,
     }
     warnings: list[str] = []
@@ -589,6 +597,7 @@ def main(argv: Optional[list[str]] = None) -> int:
         (t("stats_frag_think_kept"), stats["frag_THINK"]),
         (t("stats_frag_think_dropped"), stats["frag_THINK_dropped"]),
         (t("stats_frag_file"), stats["frag_FILE"]),
+        (t("stats_frag_tool"), stats["frag_tool"]),
         (t("stats_frag_unknown"), stats["frag_unknown"]),
     ]
     fwidth = max(display_width(label) for label, _ in frag_rows) + 2
