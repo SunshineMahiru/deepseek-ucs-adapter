@@ -19,24 +19,23 @@ DeepSeek 导出虽然也是 mapping 树结构，但消息内容存放在 message
 中，导致 ucs-parser 提取不到任何信号，Fidelity 分数极低。
 
 本脚本完成 / What it does:
-    1. fragments[] -> author.role + content.parts[]
+    1. fragments[] -> author.role + content.parts[] + message.metadata
     2. 短节点 ID -> 确定性 UUID v4（幂等，重复运行输出完全一致）
     3. 推断 current_node（create_time 最新的叶子节点）
     4. ISO 8601 时间戳 -> Unix 浮点数
-    5. 补充 ChatGPT 所需空字段
+    5. 补齐 ChatGPT 会话与消息字段
 
 关键设计说明（务必阅读）/ Design notes:
-- root 节点（message == null）**保留**。ucs-parser 的 `_extract_messages`
-  有 `if not msg: continue` 保护，不会崩溃；保留它符合 ChatGPT 导出格式。
-- 一条消息的 fragments 为空 / 全是无文本工具片段时，该节点会被**跳过**，
-  并把它的子节点「旁路重挂」到其父节点上，避免树断链。
+- 默认是保真转换：节点与父子关系沿用源数据，parts 只放请求与回复的原文，
+  不裁剪、不插入标记。THINK 进 message.metadata.reasoning，附件信息进
+  metadata.attachments，工具结果进 metadata.tool_results 或 tool_calls；
+  每条消息的 metadata 还记录 original_id、original_parent 与 model。
+- 需要旧的前缀写法时加 --legacy-tags；需要跳过空节点并把子节点旁路到
+  最近的保留祖先时加 --flatten-empty。两个开关都关闭时不动源结构。
 - fragment.type 完整类型集（实测 8 种）：REQUEST / RESPONSE / THINK /
   TOOL_OPEN / TOOL_SEARCH / TOOL_FIND / SEARCH / FILE。
-  处理规则：REQUEST->user、RESPONSE->assistant、THINK->assistant(加
-  [REASONING] 前缀，可用 --no-merge-think 丢弃)、FILE->保留文件名、
-  其余工具类(TOOL_*/SEARCH)->默认丢弃（它们没有正文，SEARCH.results
-  是 Python repr 字符串）；加 --keep-tool-fragments 可把搜索结果的
-  标题与链接写成 [工具] 行。
+  角色规则：含 REQUEST 的节点为 user；只含 FILE 且没有 RESPONSE 或 THINK
+  的节点也是 user；其余为 assistant。
 
 依赖 / Dependencies: 仅标准库（json / uuid / datetime / sys / argparse /
 hashlib / unicodedata / os / pathlib）。
@@ -84,12 +83,20 @@ MSG: dict[str, dict[str, str]] = {
     "arg_dry_run": {"zh": "只解析和统计，不写文件", "en": "Parse and report only, without writing files"},
     "arg_limit": {"zh": "只转换前 N 个会话（用于快速测试）", "en": "Convert only the first N conversations (for quick testing)"},
     "arg_merge_think": {
-        "zh": "保留 THINK 推理片段并加 [REASONING] 前缀（默认开启）；--no-merge-think 丢弃",
-        "en": "Keep THINK reasoning fragments with a [REASONING] prefix (default on); --no-merge-think drops them",
+        "zh": "保留 THINK 推理片段并写入 message.metadata.reasoning（默认开启）；--no-merge-think 丢弃",
+        "en": "Keep THINK fragments in message.metadata.reasoning (default on); --no-merge-think drops them",
     },
     "arg_keep_tools": {
-        "zh": "把 SEARCH / TOOL_SEARCH 的搜索结果写成 [工具] 行（默认关闭）",
-        "en": "Write SEARCH / TOOL_SEARCH results as [TOOL] lines (default off)",
+        "zh": "配合 --legacy-tags，把 SEARCH 结果写成 [工具] 行（默认关闭）",
+        "en": "With --legacy-tags, write SEARCH results as [TOOL] lines (default off)",
+    },
+    "arg_legacy_tags": {
+        "zh": "沿用旧的 [REASONING] / [文件] / [工具] 前缀，把注记写进 parts",
+        "en": "Use the old [REASONING] / [FILE] / [TOOL] prefixes inside parts",
+    },
+    "arg_flatten_empty": {
+        "zh": "跳过没有文本的节点，并把子节点旁路到最近的保留祖先",
+        "en": "Skip nodes without text and reattach their children to the nearest kept ancestor",
     },
     "arg_lang": {"zh": "界面语言（zh=中文，en=English）", "en": "UI language (zh=Chinese, en=English)"},
 
@@ -209,8 +216,8 @@ def to_unix(iso: Any) -> Optional[float]:
     return parsed.timestamp()
 
 
-def format_tool_results(raw: Any) -> Optional[str]:
-    """把 SEARCH / TOOL_SEARCH 的 results 解析成「标题 — URL」行。
+def parse_tool_results(raw: Any) -> Optional[list[dict[str, str]]]:
+    """解析 SEARCH / TOOL_SEARCH 的 results，返回 [{"title": ..., "url": ...}]。
 
     DeepSeek 导出的 results 是 Python repr 字符串，需要 literal_eval；
     解析失败或没有可用条目时返回 None。
@@ -223,30 +230,51 @@ def format_tool_results(raw: Any) -> Optional[str]:
     if not isinstance(raw, list):
         return None
 
-    lines: list[str] = []
+    items: list[dict[str, str]] = []
     for item in raw:
         if not isinstance(item, dict):
             continue
         title = str(item.get("title") or "").strip()
         url = str(item.get("url") or "").strip()
-        if title and url:
-            lines.append(f"{title} — {url}")
-        elif title:
-            lines.append(title)
-        elif url:
-            lines.append(url)
-    return "\n".join(lines) if lines else None
+        if title or url:
+            items.append({"title": title, "url": url})
+    return items or None
 
 
-def extract_parts(
+def format_tool_lines(items: list[dict[str, str]]) -> str:
+    """把解析后的工具结果拼成多行文本，供旧的前缀写法使用。"""
+    lines: list[str] = []
+    for item in items:
+        if item["title"] and item["url"]:
+            lines.append(f"{item['title']} — {item['url']}")
+        elif item["title"]:
+            lines.append(item["title"])
+        else:
+            lines.append(item["url"])
+    return "\n".join(lines)
+
+
+def extract_fragments(
     fragments: list,
     merge_think: bool,
+    keep_tools: bool,
+    legacy_tags: bool,
     warn: Callable[[str], None],
     stats: dict[str, int],
-    keep_tools: bool = False,
-) -> list[str]:
-    """把 fragments[] 转成 content.parts[]（字符串数组），保持顺序。"""
+) -> tuple[list[str], dict[str, Any]]:
+    """把 fragments[] 拆成 (content.parts, message.metadata)。
+
+    默认路径只把正文写进 parts：REQUEST 与 RESPONSE 的原文按顺序追加，
+    THINK 进 metadata.reasoning，附件信息进 metadata.attachments，
+    工具结果进 metadata.tool_results 或 metadata.tool_calls。
+    legacy_tags 打开时沿用旧的 [REASONING] / [文件] / [工具] 前缀写法。
+    """
     parts: list[str] = []
+    reasoning: list[str] = []
+    attachments: list[dict[str, Any]] = []
+    tool_results: list[dict[str, Any]] = []
+    tool_calls: list[str] = []
+    unparsed_tools: list[dict[str, Any]] = []
     for frag in fragments:
         if not isinstance(frag, dict):
             stats["skipped_fragments"] += 1
@@ -259,26 +287,15 @@ def extract_parts(
             warn(t("warn_frag_no_type"))
             continue
 
-        if ftype == "REQUEST":
+        if ftype in ("REQUEST", "RESPONSE"):
             content = frag.get("content")
             if content is None:
                 stats["skipped_fragments"] += 1
-                warn(t("warn_req_no_content"))
+                warn(t("warn_req_no_content" if ftype == "REQUEST" else "warn_resp_no_content"))
                 continue
-            stats["frag_REQUEST"] += 1
-            text = str(content).strip()
-            if text:
-                parts.append(text)
-
-        elif ftype == "RESPONSE":
-            content = frag.get("content")
-            if content is None:
-                stats["skipped_fragments"] += 1
-                warn(t("warn_resp_no_content"))
-                continue
-            stats["frag_RESPONSE"] += 1
-            text = str(content).strip()
-            if text:
+            stats["frag_REQUEST" if ftype == "REQUEST" else "frag_RESPONSE"] += 1
+            text = str(content)
+            if text.strip():
                 parts.append(text)
 
         elif ftype == "THINK":
@@ -291,9 +308,13 @@ def extract_parts(
                 warn(t("warn_think_no_content"))
                 continue
             stats["frag_THINK"] += 1
-            text = str(content).strip()
-            if text:
+            text = str(content)
+            if not text.strip():
+                continue
+            if legacy_tags:
                 parts.append(t("tag_reasoning", text=text))
+            else:
+                reasoning.append(text)
 
         elif ftype == "FILE":
             # 保留附件文件名（用户上传的图片/文档）
@@ -304,10 +325,17 @@ def extract_parts(
                 continue
             produced = 0
             for fobj in files:
-                if isinstance(fobj, dict) and fobj.get("file_name"):
-                    produced += 1
-                    stats["frag_FILE"] += 1
-                    parts.append(t("tag_file", name=fobj["file_name"]))
+                if not isinstance(fobj, dict) or not fobj.get("file_name"):
+                    continue
+                produced += 1
+                stats["frag_FILE"] += 1
+                name = str(fobj["file_name"])
+                record = {k: fobj[k] for k in ("file_id", "file_name", "file_size") if k in fobj}
+                attachments.append(record)
+                if legacy_tags:
+                    parts.append(t("tag_file", name=name))
+                else:
+                    parts.append(name)
             if not produced:
                 stats["skipped_fragments"] += 1
                 warn(t("warn_file_no_name"))
@@ -316,17 +344,33 @@ def extract_parts(
             # 已知的工具类片段与真正未知的类型分开计数
             if ftype in _TOOL_TYPES:
                 stats["frag_tool"] += 1
-                if keep_tools and ftype in ("TOOL_SEARCH", "SEARCH"):
-                    text = format_tool_results(frag.get("results"))
-                    if text:
-                        parts.append(t("tag_tool", text=text))
-                    else:
+                if ftype in ("TOOL_SEARCH", "SEARCH"):
+                    items = parse_tool_results(frag.get("results"))
+                    if items is None:
                         stats["skipped_fragments"] += 1
                         warn(t("warn_tool_no_results"))
+                        unparsed_tools.append({"type": ftype, "raw": frag.get("results")})
+                        continue
+                    tool_results.append({"type": ftype, "items": items})
+                    if legacy_tags and keep_tools:
+                        parts.append(t("tag_tool", text=format_tool_lines(items)))
+                else:
+                    tool_calls.append(ftype)
             else:
                 stats["frag_unknown"] += 1
 
-    return parts
+    meta: dict[str, Any] = {}
+    if reasoning:
+        meta["reasoning"] = reasoning
+    if attachments:
+        meta["attachments"] = attachments
+    if tool_results:
+        meta["tool_results"] = tool_results
+    if tool_calls:
+        meta["tool_calls"] = tool_calls
+    if unparsed_tools:
+        meta["unparsed_tools"] = unparsed_tools
+    return parts, meta
 
 
 def find_current_node(mapping: dict[str, dict], root_uid: str) -> str:
@@ -369,8 +413,14 @@ def convert_conversation(
     warn: Callable[[str], None],
     stats: dict[str, int],
     keep_tools: bool = False,
+    legacy_tags: bool = False,
+    flatten_empty: bool = False,
 ) -> Optional[dict]:
-    """转换单个会话，失败返回 None。"""
+    """转换单个会话，失败返回 None。
+
+    默认保留全部节点与原始父子关系；flatten_empty 打开时退回旧行为，
+    跳过没有文本的节点并把子节点旁路到最近的保留祖先。
+    """
     conv_id = str(conv.get("id") or "")
     title = conv.get("title")
     raw = conv.get("mapping")
@@ -394,9 +444,9 @@ def convert_conversation(
         stats["skipped_conversations"] += 1
         return None
 
-    # ---- 第一遍：分类 kept/skipped，提取 role + parts ----
+    # ---- 第一遍：解析每个节点，默认全部保留 ----
     kept: dict[str, bool] = {}
-    role_parts: dict[str, tuple[Optional[str], Optional[list]]] = {}
+    node_data: dict[str, tuple[Optional[str], list[str], dict[str, Any]]] = {}
     for nid, node in raw.items():
         if not isinstance(node, dict):
             kept[nid] = False
@@ -407,21 +457,26 @@ def convert_conversation(
         if msg is None:
             if nid == root_id:
                 kept[nid] = True
-                role_parts[nid] = (None, None)
-            else:
-                # 没有 message 的占位节点：跳过，由第二遍旁路其子节点
+                node_data[nid] = (None, [], {})
+            elif flatten_empty:
                 kept[nid] = False
                 stats["skipped_nodes"] += 1
+            else:
+                # 保真模式：保留占位节点，输出 message 为 null
+                kept[nid] = True
+                node_data[nid] = (None, [], {})
             continue
         if not isinstance(msg, dict):
             warn(t("warn_msg_not_dict", id=nid))
             if nid == root_id:
-                # root 的 message 损坏：按 message 为 null 处理，保留整棵树
                 kept[nid] = True
-                role_parts[nid] = (None, None)
-            else:
+                node_data[nid] = (None, [], {})
+            elif flatten_empty:
                 kept[nid] = False
                 stats["skipped_nodes"] += 1
+            else:
+                kept[nid] = True
+                node_data[nid] = ("assistant", [], {"broken_message": True})
             continue
         frags = msg.get("fragments") or []
         types = {str(f.get("type") or "").upper() for f in frags if isinstance(f, dict)}
@@ -432,44 +487,56 @@ def convert_conversation(
             role = "user"
         else:
             role = "assistant"
-        parts = extract_parts(frags, merge_think, warn, stats, keep_tools)
-        role_parts[nid] = (role, parts)
-        if parts:
-            kept[nid] = True
-        else:
-            # 空文本节点：跳过，并在第二遍旁路重挂
+        parts, meta = extract_fragments(
+            frags, merge_think, keep_tools, legacy_tags, warn, stats
+        )
+        node_data[nid] = (role, parts, meta)
+        if flatten_empty and not parts:
             kept[nid] = False
             stats["skipped_nodes"] += 1
+        else:
+            kept[nid] = True
 
-    # root 强制保留（防御性：即使 root 的 message 意外非 null 且无文本）
-    if not kept.get(root_id):
-        kept[root_id] = True
-        stats["skipped_nodes"] -= 1
+    # root 强制保留（防御性：即使第一遍把它判为跳过）
+    kept[root_id] = True
+    if root_id not in node_data:
+        node_data[root_id] = (None, [], {})
 
-    # ---- 第二遍：旁路重挂（把被跳过节点的子节点挂到其父节点） ----
-    def eff_children(nid: str) -> list[str]:
-        out: list[str] = []
+    # ---- 第二遍：父子关系。默认沿用源数据，flatten_empty 时旁路重挂 ----
+    def source_children(nid: str) -> list[str]:
         node = raw.get(nid)
         if not isinstance(node, dict):
-            return out
+            return []
+        return [c for c in (node.get("children") or [])
+                if isinstance(c, str) and c in raw and c != nid]
+
+    def eff_children(nid: str) -> list[str]:
+        kids = source_children(nid)
+        if not flatten_empty:
+            return [c for c in kids if kept.get(c)]
+        out: list[str] = []
         seen = {nid}
-        stack = list(reversed(node.get("children", []) or []))
+        stack = list(reversed(kids))
         while stack:
             c = stack.pop()
-            if c not in raw or c in seen:
+            if c in seen or c not in raw:
                 continue
             seen.add(c)
             if kept.get(c):
                 out.append(c)
                 continue
             child_node = raw.get(c)
-            kids = child_node.get("children", []) if isinstance(child_node, dict) else []
-            stack.extend(reversed(kids or []))
+            more = child_node.get("children", []) if isinstance(child_node, dict) else []
+            stack.extend(reversed(more or []))
         return out
 
     def eff_parent(nid: str) -> Optional[str]:
         node = raw.get(nid)
         p = node.get("parent") if isinstance(node, dict) else None
+        if p is None or p not in raw:
+            return None
+        if not flatten_empty:
+            return p if kept.get(p) else None
         seen = {nid}
         while p is not None:
             # parent 指向不存在的节点，或父链成环：当作独立根节点
@@ -482,7 +549,7 @@ def convert_conversation(
             p = pn.get("parent") if isinstance(pn, dict) else None
         return None
 
-    # ---- 第三遍：构建输出 mapping（确定性 UUID） ----
+    # ---- 第三遍：构建输出 mapping（确定性 UUID + 溯源 metadata） ----
     id_map: dict[str, str] = {}
     for nid in raw:
         if kept.get(nid):
@@ -493,38 +560,58 @@ def convert_conversation(
         if not kept.get(nid):
             continue
         uid = id_map[nid]
-        role, parts = role_parts[nid]
-        if role is None and parts is None:
-            # root 节点：message 为 null，parent 为 null
+        role, parts, meta = node_data[nid]
+        children = eff_children(nid)
+        parent_nid = eff_parent(nid)
+        node = raw[nid]
+        msg = node.get("message") if isinstance(node, dict) else None
+
+        if role is None:
+            # root 或没有 message 的占位节点
             out_mapping[uid] = {
                 "id": uid,
                 "message": None,
-                "parent": None,
-                "children": [id_map[c] for c in eff_children(nid)],
+                "parent": None if nid == root_id else (
+                    id_map[parent_nid] if parent_nid is not None else None
+                ),
+                "children": [id_map[c] for c in children],
             }
-        else:
-            parent_nid = eff_parent(nid)
-            node = raw[nid]
-            msg_ts = node.get("message", {}).get("inserted_at")
-            out_mapping[uid] = {
+            continue
+
+        msg_meta: dict[str, Any] = {"original_id": nid}
+        if parent_nid is not None:
+            msg_meta["original_parent"] = parent_nid
+        if isinstance(msg, dict) and msg.get("model"):
+            msg_meta["model"] = msg["model"]
+        msg_meta.update(meta)
+
+        model = msg.get("model") if isinstance(msg, dict) else None
+        author_name = str(model) if role == "assistant" and model else None
+        msg_ts = msg.get("inserted_at") if isinstance(msg, dict) else None
+
+        out_mapping[uid] = {
+            "id": uid,
+            "message": {
                 "id": uid,
-                "message": {
-                    "id": uid,
-                    "author": {"role": role, "name": None, "metadata": {}},
-                    "content": {"content_type": "text", "parts": parts},
-                    "create_time": to_unix(msg_ts),
-                    "update_time": None,
-                    "metadata": {},
-                },
-                "parent": id_map[parent_nid] if parent_nid is not None else None,
-                "children": [id_map[c] for c in eff_children(nid)],
-            }
-            stats["message_nodes"] += 1
+                "author": {"role": role, "name": author_name, "metadata": {}},
+                "content": {"content_type": "text", "parts": parts},
+                "create_time": to_unix(msg_ts),
+                "update_time": None,
+                "end_turn": not children,
+                "metadata": msg_meta,
+                "recipient": "all",
+                "status": "finished_successfully",
+            },
+            "parent": id_map[parent_nid] if parent_nid is not None else None,
+            "children": [id_map[c] for c in children],
+        }
+        stats["message_nodes"] += 1
 
     root_uid = id_map[root_id]
     current_node = find_current_node(out_mapping, root_uid)
 
     return {
+        "id": conv_id,
         "title": title,
         "create_time": to_unix(conv.get("inserted_at")),
         "update_time": to_unix(conv.get("updated_at")),
@@ -534,6 +621,7 @@ def convert_conversation(
         "moderation_results": [],
         "is_archived": False,
         "safe_urls": [],
+        "plugin_ids": [],
     }
 
 
@@ -570,6 +658,8 @@ def main(argv: Optional[list[str]] = None) -> int:
     )
     ap.add_argument("--lang", choices=["zh", "en"], default="zh", help=t("arg_lang"))
     ap.add_argument("--keep-tool-fragments", action="store_true", help=t("arg_keep_tools"))
+    ap.add_argument("--legacy-tags", action="store_true", help=t("arg_legacy_tags"))
+    ap.add_argument("--flatten-empty", action="store_true", help=t("arg_flatten_empty"))
     args = ap.parse_args(raw_argv)
 
     # 以 argparse 解析结果为准
@@ -630,7 +720,8 @@ def main(argv: Optional[list[str]] = None) -> int:
 
         current_conv = str(conv.get("id") or conv.get("title") or f"#{i}")
         result = convert_conversation(
-            conv, args.merge_think, warn, stats, args.keep_tool_fragments
+            conv, args.merge_think, warn, stats,
+            args.keep_tool_fragments, args.legacy_tags, args.flatten_empty,
         )
         if result is not None:
             out.append(result)

@@ -70,12 +70,13 @@ class ConvertTest(unittest.TestCase):
 
         self.assertIsNotNone(result)
         self.assertEqual(len(result["mapping"]), 3)
-        roles = {
-            n["message"]["author"]["role"]: n["message"]["content"]["parts"]
+        msgs = {
+            n["message"]["author"]["role"]: n["message"]
             for n in result["mapping"].values() if n["message"]
         }
-        self.assertEqual(roles["user"], ["问题"])
-        self.assertEqual(roles["assistant"], ["[REASONING] 推理", "回答"])
+        self.assertEqual(msgs["user"]["content"]["parts"], ["问题"])
+        self.assertEqual(msgs["assistant"]["content"]["parts"], ["回答"])
+        self.assertEqual(msgs["assistant"]["metadata"]["reasoning"], ["推理"])
         self.assertEqual(stats["message_nodes"], 2)
         self.assertEqual(stats["skipped_nodes"], 0)
 
@@ -178,15 +179,18 @@ class ConvertTest(unittest.TestCase):
         self.assertIsNone(result)
         self.assertEqual(stats["skipped_conversations"], 1)
 
-    def test_non_dict_message_skips_node(self):
+    def test_non_dict_message_is_kept_as_broken_node(self):
         mapping = {
             "root": make_node("root", None, ["a"]),
             "a": {"id": "a", "parent": "root", "children": [], "message": "broken"},
         }
         stats = empty_stats()
         result = d2u.convert_conversation(make_conv(mapping), True, lambda m: None, stats)
-        self.assertEqual(len(result["mapping"]), 1)
-        self.assertEqual(stats["skipped_nodes"], 1)
+        self.assertEqual(len(result["mapping"]), 2)
+        msg = [n["message"] for n in result["mapping"].values() if n["message"]][0]
+        self.assertEqual(msg["content"]["parts"], [])
+        self.assertTrue(msg["metadata"]["broken_message"])
+        self.assertEqual(stats["skipped_nodes"], 0)
 
     def test_root_with_non_dict_message_stays_root(self):
         mapping = {
@@ -201,16 +205,18 @@ class ConvertTest(unittest.TestCase):
         self.assertEqual(len(roots), 1)
         self.assertEqual(stats["skipped_nodes"], 0)
 
-    def test_null_placeholder_is_bypassed(self):
+    def test_null_placeholder_is_kept_with_its_parent(self):
         mapping = {
             "root": make_node("root", None, ["p"]),
             "p": make_node("p", "root", ["a"]),
             "a": make_node("a", "p", [], [{"type": "REQUEST", "content": "hi"}]),
         }
         result = d2u.convert_conversation(make_conv(mapping), True, lambda m: None, empty_stats())
+        self.assertEqual(len(result["mapping"]), 3)
+        placeholders = [n for n in result["mapping"].values() if n["message"] is None]
+        self.assertEqual(len(placeholders), 2)
         roots = [n for n in result["mapping"].values() if n["parent"] is None]
         self.assertEqual(len(roots), 1)
-        self.assertEqual(len(result["mapping"]), 2)
 
     def test_file_fragment_keeps_names(self):
         mapping = {
@@ -222,8 +228,9 @@ class ConvertTest(unittest.TestCase):
         }
         stats = empty_stats()
         result = d2u.convert_conversation(make_conv(mapping), True, lambda m: None, stats)
-        parts = [n["message"]["content"]["parts"] for n in result["mapping"].values() if n["message"]][0]
-        self.assertIn("[文件] 报告.pdf", parts)
+        msg = [n["message"] for n in result["mapping"].values() if n["message"]][0]
+        self.assertIn("报告.pdf", msg["content"]["parts"])
+        self.assertEqual(msg["metadata"]["attachments"][0]["file_name"], "报告.pdf")
         self.assertEqual(stats["frag_FILE"], 1)
 
     def test_non_list_files_counts_as_skipped(self):
@@ -253,7 +260,7 @@ class ConvertTest(unittest.TestCase):
         self.assertEqual(stats["frag_tool"], 1)
         self.assertEqual(stats["frag_unknown"], 1)
 
-    def test_tool_results_are_dropped_by_default(self):
+    def test_tool_results_go_to_metadata(self):
         mapping = {
             "root": make_node("root", None, ["a"]),
             "a": make_node("a", "root", [], [
@@ -262,10 +269,12 @@ class ConvertTest(unittest.TestCase):
             ]),
         }
         result = d2u.convert_conversation(make_conv(mapping), True, lambda m: None, empty_stats())
-        parts = [n["message"]["content"]["parts"] for n in result["mapping"].values() if n["message"]][0]
-        self.assertEqual(parts, ["回答"])
+        msg = [n["message"] for n in result["mapping"].values() if n["message"]][0]
+        self.assertEqual(msg["content"]["parts"], ["回答"])
+        self.assertEqual(msg["metadata"]["tool_results"][0]["type"], "TOOL_SEARCH")
+        self.assertEqual(msg["metadata"]["tool_results"][0]["items"][0]["url"], "https://example.com")
 
-    def test_tool_results_can_be_kept(self):
+    def test_tool_results_can_be_written_into_parts_with_legacy_tags(self):
         mapping = {
             "root": make_node("root", None, ["a"]),
             "a": make_node("a", "root", [], [
@@ -274,9 +283,11 @@ class ConvertTest(unittest.TestCase):
             ]),
         }
         stats = empty_stats()
-        result = d2u.convert_conversation(make_conv(mapping), True, lambda m: None, stats, True)
-        parts = [n["message"]["content"]["parts"] for n in result["mapping"].values() if n["message"]][0]
-        self.assertIn("[工具] 示例 — https://example.com", parts)
+        result = d2u.convert_conversation(
+            make_conv(mapping), True, lambda m: None, stats, True, True
+        )
+        msg = [n["message"] for n in result["mapping"].values() if n["message"]][0]
+        self.assertIn("[工具] 示例 — https://example.com", msg["content"]["parts"])
         self.assertEqual(stats["frag_tool"], 1)
 
     def test_unparsable_tool_results_are_skipped(self):
@@ -289,11 +300,12 @@ class ConvertTest(unittest.TestCase):
         }
         stats = empty_stats()
         warnings = []
-        result = d2u.convert_conversation(make_conv(mapping), True, warnings.append, stats, True)
-        parts = [n["message"]["content"]["parts"] for n in result["mapping"].values() if n["message"]][0]
-        self.assertEqual(parts, ["回答"])
+        result = d2u.convert_conversation(make_conv(mapping), True, warnings.append, stats)
+        msg = [n["message"] for n in result["mapping"].values() if n["message"]][0]
+        self.assertEqual(msg["content"]["parts"], ["回答"])
         self.assertEqual(stats["skipped_fragments"], 1)
         self.assertEqual(len(warnings), 1)
+        self.assertEqual(msg["metadata"]["unparsed_tools"][0]["raw"], "{not a literal")
 
     def test_tool_results_accept_a_list(self):
         mapping = {
@@ -303,9 +315,9 @@ class ConvertTest(unittest.TestCase):
                 {"type": "RESPONSE", "content": "回答"},
             ]),
         }
-        result = d2u.convert_conversation(make_conv(mapping), True, lambda m: None, empty_stats(), True)
-        parts = [n["message"]["content"]["parts"] for n in result["mapping"].values() if n["message"]][0]
-        self.assertIn("[工具] 只有标题", parts)
+        result = d2u.convert_conversation(make_conv(mapping), True, lambda m: None, empty_stats())
+        msg = [n["message"] for n in result["mapping"].values() if n["message"]][0]
+        self.assertEqual(msg["metadata"]["tool_results"][0]["items"], [{"title": "只有标题", "url": ""}])
 
     def test_root_with_empty_parts_is_counted_once(self):
         mapping = {
@@ -316,6 +328,109 @@ class ConvertTest(unittest.TestCase):
         self.assertEqual(len(result["mapping"]), 1)
         self.assertEqual(stats["skipped_nodes"], 0)
         self.assertEqual(stats["message_nodes"], 1)
+
+
+class StructureTest(unittest.TestCase):
+    def setUp(self):
+        d2u.set_lang("zh")
+
+    def build(self):
+        mapping = {
+            "root": make_node("root", None, ["u"]),
+            "u": make_node("u", "root", ["a"], [{"type": "REQUEST", "content": "问题"}]),
+            "a": make_node("a", "u", [], [
+                {"type": "THINK", "content": "推理"},
+                {"type": "RESPONSE", "content": "回答"},
+            ], when="2026-10-15T10:00:02+08:00"),
+        }
+        mapping["a"]["message"]["model"] = "deepseek-reasoner"
+        return d2u.convert_conversation(make_conv(mapping), True, lambda m: None, empty_stats())
+
+    def test_conversation_fields(self):
+        conv = self.build()
+        for key in ("id", "title", "create_time", "update_time", "mapping",
+                    "current_node", "conversation_id", "moderation_results",
+                    "is_archived", "safe_urls", "plugin_ids"):
+            self.assertIn(key, conv)
+
+    def test_message_fields(self):
+        conv = self.build()
+        for node in conv["mapping"].values():
+            msg = node["message"]
+            if msg is None:
+                continue
+            for key in ("id", "author", "content", "create_time", "update_time",
+                        "end_turn", "metadata", "recipient", "status"):
+                self.assertIn(key, msg)
+            self.assertIn(msg["author"]["role"], ("user", "assistant"))
+            self.assertEqual(msg["content"]["content_type"], "text")
+            self.assertIsInstance(msg["content"]["parts"], list)
+
+    def test_parent_child_links_are_mutual(self):
+        conv = self.build()
+        mapping = conv["mapping"]
+        for uid, node in mapping.items():
+            for child in node["children"]:
+                self.assertIn(child, mapping)
+                self.assertEqual(mapping[child]["parent"], uid)
+            if node["parent"] is not None:
+                self.assertIn(node["parent"], mapping)
+                self.assertIn(uid, mapping[node["parent"]]["children"])
+
+    def test_current_node_is_a_leaf(self):
+        conv = self.build()
+        self.assertEqual(conv["mapping"][conv["current_node"]]["children"], [])
+
+    def test_metadata_carries_provenance(self):
+        conv = self.build()
+        assistant = [n["message"] for n in conv["mapping"].values()
+                     if n["message"] and n["message"]["author"]["role"] == "assistant"][0]
+        self.assertEqual(assistant["metadata"]["original_id"], "a")
+        self.assertEqual(assistant["metadata"]["original_parent"], "u")
+        self.assertEqual(assistant["metadata"]["model"], "deepseek-reasoner")
+        self.assertEqual(assistant["metadata"]["reasoning"], ["推理"])
+
+    def test_tool_calls_are_recorded(self):
+        mapping = {
+            "root": make_node("root", None, ["a"]),
+            "a": make_node("a", "root", [], [
+                {"type": "TOOL_OPEN"},
+                {"type": "TOOL_FIND"},
+                {"type": "RESPONSE", "content": "回答"},
+            ]),
+        }
+        result = d2u.convert_conversation(make_conv(mapping), True, lambda m: None, empty_stats())
+        msg = [n["message"] for n in result["mapping"].values() if n["message"]][0]
+        self.assertEqual(msg["metadata"]["tool_calls"], ["TOOL_OPEN", "TOOL_FIND"])
+
+    def test_legacy_tags_restore_prefixes(self):
+        mapping = {
+            "root": make_node("root", None, ["a"]),
+            "a": make_node("a", "root", [], [
+                {"type": "THINK", "content": "推理"},
+                {"type": "FILE", "files": [{"file_name": "x.pdf"}]},
+                {"type": "RESPONSE", "content": "回答"},
+            ]),
+        }
+        result = d2u.convert_conversation(
+            make_conv(mapping), True, lambda m: None, empty_stats(), False, True
+        )
+        msg = [n["message"] for n in result["mapping"].values() if n["message"]][0]
+        self.assertEqual(msg["content"]["parts"], ["[REASONING] 推理", "[文件] x.pdf", "回答"])
+        self.assertNotIn("reasoning", msg["metadata"])
+
+    def test_flatten_empty_drops_empty_nodes(self):
+        mapping = {
+            "root": make_node("root", None, ["e"]),
+            "e": make_node("e", "root", ["a"], []),
+            "a": make_node("a", "e", [], [{"type": "REQUEST", "content": "hi"}]),
+        }
+        stats = empty_stats()
+        result = d2u.convert_conversation(
+            make_conv(mapping), True, lambda m: None, stats, False, False, True
+        )
+        self.assertEqual(len(result["mapping"]), 2)
+        self.assertEqual(stats["skipped_nodes"], 1)
 
 
 class TimeTest(unittest.TestCase):
