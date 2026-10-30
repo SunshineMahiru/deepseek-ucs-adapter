@@ -86,6 +86,8 @@ MSG: dict[str, dict[str, str]] = {
     "warn_req_no_content": {"zh": "REQUEST fragment 缺少 content，跳过", "en": "REQUEST fragment missing content, skipped"},
     "warn_resp_no_content": {"zh": "RESPONSE fragment 缺少 content，跳过", "en": "RESPONSE fragment missing content, skipped"},
     "warn_think_no_content": {"zh": "THINK fragment 缺少 content，跳过", "en": "THINK fragment missing content, skipped"},
+    "warn_file_not_list": {"zh": "FILE fragment 的 files 不是数组，跳过", "en": "FILE fragment has a non-list files field, skipped"},
+    "warn_file_no_name": {"zh": "FILE fragment 没有可用的文件名，跳过", "en": "FILE fragment has no usable file name, skipped"},
     "warn_conv_no_mapping": {"zh": "会话 '{title}' (id={id}) 缺少 mapping，跳过", "en": "conversation '{title}' (id={id}) missing mapping, skipped"},
     "warn_conv_no_root": {"zh": "会话 '{title}' (id={id}) 无 root 节点，跳过", "en": "conversation '{title}' (id={id}) has no root node, skipped"},
     "warn_conv_not_dict": {"zh": "第 {i} 个会话不是 dict，跳过", "en": "conversation #{i} is not a dict, skipped"},
@@ -234,13 +236,19 @@ def extract_parts(
         elif ftype == "FILE":
             # 保留附件文件名（用户上传的图片/文档）
             files = frag.get("files")
-            if isinstance(files, list):
-                for fobj in files:
-                    if isinstance(fobj, dict) and fobj.get("file_name"):
-                        stats["frag_FILE"] += 1
-                        parts.append(f"[文件] {fobj['file_name']}")
-            else:
-                stats["frag_FILE"] += 1
+            if not isinstance(files, list):
+                stats["skipped_fragments"] += 1
+                warn(t("warn_file_not_list"))
+                continue
+            produced = 0
+            for fobj in files:
+                if isinstance(fobj, dict) and fobj.get("file_name"):
+                    produced += 1
+                    stats["frag_FILE"] += 1
+                    parts.append(f"[文件] {fobj['file_name']}")
+            if not produced:
+                stats["skipped_fragments"] += 1
+                warn(t("warn_file_no_name"))
 
         else:
             # TOOL_OPEN / TOOL_SEARCH / TOOL_FIND / SEARCH 及其他未知类型 -> 丢弃
