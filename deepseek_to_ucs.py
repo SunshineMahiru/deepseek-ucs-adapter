@@ -103,6 +103,8 @@ MSG: dict[str, dict[str, str]] = {
     "err_write_log": {"zh": "错误：无法写入日志文件：{e}", "en": "Error: cannot write log file: {e}"},
     "err_write_output": {"zh": "错误：无法写入输出文件：{e}", "en": "Error: cannot write output file: {e}"},
     "err_bad_limit": {"zh": "错误：--limit 必须是正整数，收到 {n}", "en": "Error: --limit must be a positive integer, got {n}"},
+    "err_not_conversation": {"zh": "错误：输入不是会话数组，也不是包含 mapping 的单个会话对象", "en": "Error: input is neither a conversation array nor a single conversation object with a mapping"},
+    "err_no_output": {"zh": "错误：没有任何会话转换成功，输出为空数组", "en": "Error: no conversation was converted, the output is an empty array"},
     "warn_top_not_array": {"zh": "警告：输入顶层不是数组（{t}），已包装为单元素数组", "en": "Warning: top-level input is not an array ({t}), wrapped as a single-element array"},
 
     # 进度 / verbose
@@ -501,8 +503,11 @@ def main(argv: Optional[list[str]] = None) -> int:
         print(t("err_read_input", e=e), file=sys.stderr)
         return 2
 
-    # 顶层必须是数组；否则尝试包装
+    # 顶层必须是数组；单个会话对象可以被包装，其余结构直接判为输入错误
     if not isinstance(data, list):
+        if not isinstance(data, dict) or "mapping" not in data:
+            print(t("err_not_conversation"), file=sys.stderr)
+            return 2
         print(t("warn_top_not_array", t=type(data).__name__), file=sys.stderr)
         data = [data]
 
@@ -620,6 +625,9 @@ def main(argv: Optional[list[str]] = None) -> int:
         return 2
 
     print("\n" + t("output_written", path=args.output))
+    if not out and total > 0:
+        print(t("err_no_output"), file=sys.stderr)
+        return 3
     return 0
 
 
